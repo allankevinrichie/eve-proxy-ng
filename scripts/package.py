@@ -105,7 +105,8 @@ def main() -> int:
 
     # --- stage docs ---
     if not args.skip_docs:
-        run([str(ROOT / ".venv" / "Scripts" / "mkdocs.exe"), "build", "--strict"], cwd=ROOT)
+        mkdocs = shutil.which("mkdocs") or str(ROOT / ".venv" / "Scripts" / "mkdocs.exe")
+        run([mkdocs, "build", "--strict"], cwd=ROOT)
     if (SITE_DIR / "index.html").is_file():
         if DOCS_DIR.exists():
             shutil.rmtree(DOCS_DIR)
@@ -115,11 +116,13 @@ def main() -> int:
         return 1
 
     # --- wheel ---
+    venv_python = ROOT / ".venv" / "Scripts" / "python.exe"
+    interpreter = str(venv_python) if venv_python.is_file() else sys.executable
     run(
         [
             "maturin", "build", "--release",
             "-m", str(BINDINGS / "Cargo.toml"),
-            "-i", str(ROOT / ".venv" / "Scripts" / "python.exe"),
+            "-i", interpreter,
         ],
         cwd=ROOT,
     )
