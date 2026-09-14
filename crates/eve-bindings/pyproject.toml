@@ -29,6 +29,7 @@ Documentation = "https://github.com/eve-proxy-ng/eve-proxy-ng#readme"
 
 [project.scripts]
 eve-cli = "eve_proxy_ng.cli:main"
+eve-view = "eve_proxy_ng.view:main"
 
 [tool.maturin]
 # Mixed Rust/Python project: the cdylib lands as eve_proxy_ng/_core.pyd next to

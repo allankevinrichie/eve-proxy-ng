@@ -15,3 +15,7 @@
 ## CLI 包装器
 
 ::: eve_proxy_ng.cli
+
+## 语义视图服务器
+
+::: eve_proxy_ng.view

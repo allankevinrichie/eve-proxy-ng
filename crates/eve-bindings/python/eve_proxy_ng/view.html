@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>eve-proxy-ng · 语义视图</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #10161f; --border: #1b2532;
+    --cyan: #2bd9ff; --gold: #f5c400; --red: #ff5f56; --green: #52d273;
+    --text: #d3dde8; --dim: #77879a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font: 13px/1.5 "Inter", "Microsoft YaHei", sans-serif; overflow: hidden;
+         display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 14px; padding: 6px 14px;
+           background: linear-gradient(180deg,#0c141d,#0a0e14);
+           box-shadow: inset 0 -2px 0 var(--cyan); flex: none; }
+  header h1 { font-size: 15px; letter-spacing: .06em; color: #eaf7ff; }
+  header h1 b { color: var(--cyan); }
+  #stats { color: var(--dim); font-size: 12px; }
+  #stats b { color: var(--text); font-weight: 600; }
+  #err { color: var(--red); }
+  header .grow { flex: 1; }
+  label.tog { color: var(--dim); cursor: pointer; user-select: none;
+              font-size: 12px; padding: 2px 6px; border: 1px solid var(--border);
+              border-radius: 3px; }
+  label.tog.on { color: #7fe4ff; border-color: #2bd9ff66; background: #2bd9ff14; }
+  #stage { flex: 1; overflow: auto; position: relative; background: var(--bg); }
+  canvas { display: block; transform-origin: 0 0; }
+  #tip { position: fixed; pointer-events: none; display: none; max-width: 380px;
+         background: #0d141dee; border: 1px solid #2bd9ff55; border-radius: 4px;
+         padding: 8px 10px; font-size: 12px; z-index: 10; box-shadow: 0 4px 18px #000c; }
+  #tip .t { color: #7fe4ff; font-weight: 600; margin-bottom: 4px; }
+  #tip table { border-collapse: collapse; }
+  #tip td { padding: 0 8px 0 0; color: var(--dim); vertical-align: top; }
+  #tip td.v { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>eve-proxy-ng</b> 语义视图</h1>
+  <span id="stats">连接中…</span>
+  <span id="err"></span>
+  <span class="grow"></span>
+  <label class="tog" data-k="windows">窗口</label>
+  <label class="tog" data-k="overview">总览</label>
+  <label class="tog" data-k="modules">模块</label>
+  <label class="tog" data-k="menus">菜单</label>
+  <label class="tog" data-k="elements">交互元素</label>
+  <label class="tog" id="pause">暂停</label>
+</header>
+<div id="stage"><canvas id="cv"></canvas></div>
+<div id="tip"></div>
+<script>
+"use strict";
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const tip = document.getElementById("tip"), statsEl = document.getElementById("stats");
+const errEl = document.getElementById("err");
+let scene = null, paused = false, updates = 0, lastT = 0, ups = 0;
+let nodes = [], scale = 1;
+const icons = new Map();  // path -> {img, ok}
+const layers = { windows: true, overview: true, modules: true, menus: true, elements: true };
+
+const KIND_OF = {
+  window: "windows", overview: "overview", item: "overview",
+  module: "modules", menu: "menus", menuitem: "menus",
+  hud: "modules", element: "elements",
+};
+const COLORS = {
+  cyan: "#2bd9ff", gold: "#f5c400", red: "#ff5f56", green: "#52d273",
+  dim: "#77879a", text: "#d3dde8", border: "#1b2532", panel: "#10161f",
+  row: "#0d141d",
+};
+
+function icon(path) {
+  if (!path) return null;
+  let e = icons.get(path);
+  if (!e) {
+    const img = new Image();
+    e = { img, ok: false };
+    img.onload = () => { e.ok = true; requestDraw(); };
+    img.src = "/icon?path=" + encodeURIComponent(path);
+    icons.set(path, e);
+  }
+  return e.ok ? e.img : null;
+}
+
+function fit() {
+  if (!scene) return;
+  cv.width = scene.size[0]; cv.height = scene.size[1];
+  const stage = document.getElementById("stage");
+  scale = Math.min(1, (stage.clientWidth - 12) / cv.width);
+  cv.style.transform = `scale(${scale})`;
+  cv.style.width = cv.width + "px"; cv.style.height = cv.height + "px";
+}
+window.addEventListener("resize", () => { fit(); requestDraw(); });
+
+function requestDraw() { requestAnimationFrame(draw); }
+
+function text(s, x, y, color, font, align) {
+  ctx.fillStyle = color || COLORS.text;
+  ctx.font = font || '12px "Microsoft YaHei", sans-serif';
+  ctx.textAlign = align || "left"; ctx.textBaseline = "middle";
+  ctx.fillText(s, x, y);
+}
+function clipText(s, w) {
+  if (!s) return s;
+  if (ctx.measureText(s).width <= w) return s;
+  while (s.length > 1 && ctx.measureText(s + "…").width > w) s = s.slice(0, -1);
+  return s + "…";
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#070a0f"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!scene || scene.error) {
+    text(scene && scene.error ? "⚠ " + scene.error : "等待场景…",
+         cv.width / 2, 40, COLORS.red, '14px "Microsoft YaHei"', "center");
+    return;
+  }
+  const order = ["element", "window", "item", "menuitem", "menu",
+                 "overview", "hud", "module"];
+  for (const kind of order) {
+    for (const n of nodes) {
+      if (n.k !== kind || !layers[KIND_OF[kind]]) continue;
+      drawNode(n);
+    }
+  }
+}
+
+function drawNode(n) {
+  const { x, y, w, h } = n;
+  if (w <= 0 || h <= 0) return;
+  switch (n.k) {
+    case "window":
+      ctx.strokeStyle = COLORS.border; ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, w, h);
+      if (n.l) {
+        ctx.fillStyle = COLORS.panel; ctx.fillRect(x, y, w, 20);
+        ctx.strokeStyle = COLORS.border; ctx.strokeRect(x, y, w, 20);
+        text(clipText(n.l, w - 12), x + 8, y + 10, "#7fe4ff");
+      }
+      break;
+    case "overview": {
+      ctx.fillStyle = COLORS.row; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = n.c === 2 ? COLORS.red + "55" : COLORS.border;
+      ctx.lineWidth = 1; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      let tx = x + 6;
+      const img = icon(n.i);
+      if (img) { ctx.drawImage(img, x + 6, y + (h - 16) / 2, 16, 16); tx += 22; }
+      else if (n.i) { ctx.strokeStyle = COLORS.dim; ctx.strokeRect(x + 6, y + (h-16)/2, 16, 16); tx += 22; }
+      text(clipText(n.l || "?", w * 0.55), tx, y + h / 2);
+      if (n.s) text(n.s, x + w - 8, y + h / 2, COLORS.gold, null, "right");
+      break;
+    }
+    case "item":
+      ctx.fillStyle = COLORS.row; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = COLORS.border; ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      text(clipText(n.l || "?", w - 60), x + 8, y + h / 2);
+      if (n.s) text(n.s, x + w - 8, y + h / 2, COLORS.dim, null, "right");
+      break;
+    case "menu":
+      ctx.fillStyle = "#0e151e"; ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "#2bd9ff44"; ctx.lineWidth = 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      break;
+    case "menuitem":
+      text(clipText(n.l || "", w - 8), x + 10, y + h / 2,
+           n.c === 1 ? COLORS.text : COLORS.dim);
+      break;
+    case "module": {
+      const d = n.d || {};
+      ctx.fillStyle = COLORS.panel;
+      ctx.fillRect(x, y, w, h);
+      let border = COLORS.border;
+      if (d.is_active) border = COLORS.green;
+      else if (d.is_busy) border = COLORS.gold;
+      ctx.strokeStyle = border; ctx.lineWidth = d.is_active ? 2 : 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      const img = icon(n.i);
+      if (img) {
+        const s = Math.min(w, h) - 8;
+        ctx.drawImage(img, x + (w - s) / 2, y + (h - s) / 2, s, s);
+      } else if (n.l) {
+        text(clipText(n.l.slice(0, 4), w - 4), x + w / 2, y + h / 2,
+             COLORS.dim, null, "center");
+      }
+      if (d.is_active) { ctx.fillStyle = COLORS.green; ctx.fillRect(x + 2, y + 2, 4, 4); }
+      break;
+    }
+    case "hud": {
+      const d = n.d || {};
+      const bars = [
+        ["电容", d.capacitor_percent, COLORS.cyan],
+        ["护盾", d.shield, "#52d2c9"],
+        ["装甲", d.armor, "#e8b04a"],
+        ["结构", d.structure, "#e06c5a"],
+      ];
+      let by = y - 4 - bars.length * 14;
+      const bx = x + w - 150;
+      for (const [name, pct, color] of bars) {
+        if (pct == null) continue;
+        by += 14;
+        ctx.fillStyle = "#0d141d"; ctx.fillRect(bx, by, 120, 8);
+        ctx.fillStyle = color; ctx.fillRect(bx, by, 120 * Math.max(0, Math.min(100, pct)) / 100, 8);
+        text(name, bx - 6, by + 4, COLORS.dim, '10px sans-serif', "right");
+      }
+      if (d.speed_text) text(d.speed_text, bx - 6, by + 18, COLORS.gold, null, "right");
+      break;
+    }
+    default: {  // element
+      const stroke = n.c === 1 ? COLORS.cyan + "66"
+                   : n.c === 2 ? COLORS.red + "44" : COLORS.dim + "33";
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1;
+      if (n.c === 0) ctx.setLineDash([3, 3]);
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      ctx.setLineDash([]);
+      if (n.l && h >= 14 && w >= 30) {
+        text(clipText(n.l, w - 8), x + 4, y + 8,
+             n.c === 1 ? "#9fe8ff" : COLORS.dim, '10px "Microsoft YaHei"');
+      }
+      break;
+    }
+  }
+}
+
+function applyScene(next) {
+  scene = next;
+  nodes = next.nodes || [];
+  fit();
+  requestDraw();
+}
+
+const es = new EventSource("/stream");
+es.onmessage = (ev) => {
+  errEl.textContent = "";
+  if (paused) { updates++; return; }
+  applyScene(JSON.parse(ev.data));
+  updates++;
+  const now = performance.now();
+  if (now - lastT > 1000) { ups = Math.round(updates * 1000 / (now - lastT)); updates = 0; lastT = now; }
+  const s = scene.stats || {}, st = scene.state || {};
+  statsEl.innerHTML =
+    `状态 <b>${st.screen || "?"}${st.modal ? " · 模态:" + st.modal : ""}</b>` +
+    ` · 节点 <b>${s.node_count ?? "?"}</b> · 绘制 <b>${s.nodes ?? "?"}</b>` +
+    (s.build_ms != null ? ` · 构建 <b>${s.build_ms}ms</b>` : "") +
+    ` · <b>${ups}/s</b>`;
+};
+es.onerror = () => { errEl.textContent = "SSE 断开，重连中…"; };
+
+document.querySelectorAll("label.tog[data-k]").forEach(el => {
+  el.classList.add("on");
+  el.onclick = () => {
+    const k = el.dataset.k;
+    layers[k] = !layers[k];
+    el.classList.toggle("on", layers[k]);
+    requestDraw();
+  };
+});
+const pauseEl = document.getElementById("pause");
+pauseEl.onclick = () => {
+  paused = !paused;
+  pauseEl.classList.toggle("on", paused);
+  pauseEl.textContent = paused ? "继续" : "暂停";
+};
+
+cv.addEventListener("mousemove", (ev) => {
+  const r = cv.getBoundingClientRect();
+  const mx = (ev.clientX - r.left) / scale, my = (ev.clientY - r.top) / scale;
+  let hit = null;
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) { hit = n; break; }
+  }
+  if (!hit) { tip.style.display = "none"; return; }
+  const d = hit.d || {};
+  const rows = [
+    ["类型", d.type_name || hit.k],
+    hit.l && ["标签", hit.l],
+    d.name && ["名称", d.name],
+    d.role && ["角色", d.role],
+    hit.s && ["副标", hit.s],
+    d.icon_name && ["图标名", d.icon_name],
+    d.type_id && ["typeID", d.type_id],
+    d.address && ["地址", d.address],
+    d.occluded_percent != null && ["遮挡", d.occluded_percent + "%"],
+    d.is_active != null && ["激活", d.is_active ? "是" : "否"],
+    hit.i && ["图标", hit.i],
+  ].filter(Boolean);
+  tip.innerHTML = `<div class="t">${hit.k}</div><table>` +
+    rows.map(([k, v]) => `<tr><td>${k}</td><td class="v">${String(v).replace(/</g, "&lt;")}</td></tr>`).join("") +
+    "</table>";
+  tip.style.display = "block";
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - 400) + "px";
+  tip.style.top = Math.min(ev.clientY + 14, innerHeight - 140) + "px";
+});
+cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+</script>
+</body>
+</html>

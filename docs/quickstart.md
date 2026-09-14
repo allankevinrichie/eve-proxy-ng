@@ -85,6 +85,15 @@ eve_proxy_ng.resources_info()
 62k+ 类型的中文名与国服独有类型直接由客户端自身的 FSD 数据派生（随包
 内嵌基线；`eve-cli icons update` 可随时从已装游戏刷新到用户 overlay）。
 
+## 语义视图：网页实时重构游戏画面
+
+```bash
+eve-view --pid 31336 --open    # 浏览器里按游戏坐标实时绘制解析结果
+```
+
+总览行带原生图标与距离、模块按钮用游戏图标、悬停看全部语义细节
+——详见[语义视图指南](guides/live-view.md)。
+
 ## 命令行：eve-cli
 
 ```bash

@@ -27,6 +27,7 @@ Rust 实现 + Python 绑定（`pip install eve-proxy-ng`，内置 `eve-cli` 与�
 | 语义提取（ship/overview/menu/inventory/neocom/chat/panels/generic） | ✅ 中文 UI 全部正确 |
 | **遮挡与命中测试**（`_pickState` 路由 + 采样遮挡 + `hit_test`） | ✅ 与真实画面互相印证 |
 | **会话录制**（观测增量 + 人类键鼠 + H.264 硬编视频三路同步） | ✅ 曙光服实机验证（NVENC 首次启用） |
+| **语义视图**（网页实时重构游戏画面，原生图标，SSE 零依赖） | ✅ `eve-view --pid <pid>` |
 | Python 3 binding（`eve_proxy_ng` 模块） | ✅ abi3 wheel，双语 docstring + mkdocs 离线文档 + eve-cli 一体打包 |
 | 样本回归测试 | ✅ 19 项断言全过 |
 
@@ -60,6 +61,9 @@ uv venv --python 3.12
 ./target/release/eve-cli.exe record                       # 所有客户端
 ./target/release/eve-cli.exe record --pid 50632 --duration-sec 120
 ./target/release/eve-cli.exe record --video-size 1080p --encoder libx264
+
+# 语义视图：网页实时重构游戏画面（原生图标、悬停详情、图层开关）
+.venv/Scripts/eve-view.exe --pid 50632 --open
 ./target/release/eve-cli.exe record --no-video            # 只录观测+输入两路
 
 # Python binding（开发模式：从源码构建 wheel）

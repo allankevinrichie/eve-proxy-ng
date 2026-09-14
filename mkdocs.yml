@@ -68,6 +68,7 @@ nav:
   - 快速上手: quickstart.md
   - 使用指南:
       - 感知与交互: guides/perception.md
+      - 语义视图: guides/live-view.md
       - 会话录制与分析: guides/recording.md
       - 资源与图标识别: guides/resources.md
       - 故障排查: guides/troubleshooting.md
