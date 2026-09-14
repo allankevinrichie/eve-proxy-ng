@@ -41,9 +41,23 @@ _PAGE = Path(__file__).with_name("view.html")
 _INTERACTABLE, _PASSIVE, _BLOCKED = 1, 0, 2
 
 
-def _node(kind, region, label=None, sub=None, icon=None, cls=_PASSIVE, detail=None):
+def _occluders(info: dict | None) -> list[list[int]]:
+    """Covering rects (game coords) for one node, from its interaction
+    info (`occluded_by[].region`) — the precise occlusion geometry the
+    frontend clips drawing against."""
+    rects = []
+    for occluder in (info or {}).get("occluded_by") or []:  # info: node dict (flattened)
+        region = occluder.get("region") or {}
+        if region.get("width", 0) > 0 and region.get("height", 0) > 0:
+            rects.append([region.get("x", 0), region.get("y", 0),
+                          region["width"], region["height"]])
+    return rects[:12]
+
+
+def _node(kind, region, label=None, sub=None, icon=None, cls=_PASSIVE,
+          detail=None, interaction=None):
     r = region or {}
-    return {
+    node = {
         "k": kind,
         "x": r.get("x", 0),
         "y": r.get("y", 0),
@@ -55,11 +69,16 @@ def _node(kind, region, label=None, sub=None, icon=None, cls=_PASSIVE, detail=No
         "c": cls,
         "d": detail,
     }
+    occ = _occluders(interaction)
+    if occ:
+        node["occ"] = occ
+    return node
 
 
-def _interactable(node_with_interaction: dict) -> int:
-    info = node_with_interaction.get("interaction") or {}
-    if not info.get("is_interactable", True):
+def _interactable(source: dict) -> int:
+    # InteractionInfo is serde-flattened: is_interactable / occluded_*
+    # live at the TOP LEVEL of the node dict, not under "interaction".
+    if not source.get("is_interactable", True):
         return _BLOCKED
     return _INTERACTABLE
 
@@ -103,7 +122,8 @@ def build_scene(snap: dict) -> dict:
                    sub=button.get("hint"),
                    icon=icon_by_region.get(key),
                    cls=_INTERACTABLE,
-                   detail={"name": name, "hint": button.get("hint")}))
+                   detail={"name": name, "hint": button.get("hint")},
+                   interaction=button))
 
     # --- windows (frame + caption) ---
     for key, title in (
@@ -116,12 +136,13 @@ def build_scene(snap: dict) -> dict:
             caption = title or window.get("caption") or window.get("window_caption")
             take(_node("window", window.get("region"), label=caption, detail={
                 "kind": key, "caption": caption,
-            }))
+            }, interaction=window))
             if key == "overview_windows":
                 for tab in window.get("tabs") or []:
                     take(_node("tab", tab.get("region"), label=tab.get("name"),
                                cls=_INTERACTABLE if tab.get("is_selected") else _PASSIVE,
-                               detail={"kind": "tab", "is_selected": tab.get("is_selected")}))
+                               detail={"kind": "tab", "is_selected": tab.get("is_selected")},
+                               interaction=tab))
                 for entry in window.get("entries") or []:
                     take(_node("overview", entry.get("region"),
                                label=entry.get("object_name"),
@@ -131,8 +152,9 @@ def build_scene(snap: dict) -> dict:
                                detail={
                                    "icon_name": entry.get("icon_name"),
                                    "indications": entry.get("indications"),
-                                   "occluded_percent": (entry.get("interaction") or {}).get("occluded_percent"),
-                               }))
+                                   "occluded_percent": entry.get("occluded_percent"),
+                               },
+                               interaction=entry))
             elif key == "inventory_windows":
                 for item in window.get("items") or []:
                     qty = item.get("quantity")
@@ -140,19 +162,24 @@ def build_scene(snap: dict) -> dict:
                                label=item.get("name"),
                                sub=f"×{qty}" if qty else None,
                                cls=_PASSIVE if not item.get("is_selected") else _BLOCKED,
-                               detail={"is_selected": item.get("is_selected")}))
+                               detail={"is_selected": item.get("is_selected")},
+                               interaction=item))
 
     for menu in snap.get("context_menus") or []:
-        take(_node("menu", menu.get("region"), detail={"kind": "context_menu"}))
+        take(_node("menu", menu.get("region"), detail={"kind": "context_menu"},
+                    interaction=menu))
         for entry in menu.get("entries") or []:
             take(_node("menuitem", entry.get("region"), label=entry.get("text"),
-                       cls=_interactable(entry), detail={"kind": "menu_entry"}))
+                       cls=_interactable(entry), detail={"kind": "menu_entry"},
+                       interaction=entry))
     for menu in snap.get("util_menus") or []:
-        take(_node("menu", menu.get("region"), detail={"kind": "util_menu"}))
+        take(_node("menu", menu.get("region"), detail={"kind": "util_menu"},
+                    interaction=menu))
         for row in menu.get("checkboxes") or []:
             take(_node("menuitem", row.get("region"),
                        label=("☑ " if row.get("is_checked") else "☐ ") + (row.get("text") or ""),
-                       cls=_interactable(row), detail={"checked": row.get("is_checked")}))
+                       cls=_interactable(row), detail={"checked": row.get("is_checked")},
+                       interaction=row))
 
     # --- ship HUD ---
     ship = snap.get("ship_ui")
@@ -171,6 +198,7 @@ def build_scene(snap: dict) -> dict:
                            sub=rack,
                            icon=button.get("icon"),
                            cls=cls,
+                           interaction=button,
                            detail={
                                "type_id": button.get("type_id"),
                                "icon_name": button.get("icon_name"),
@@ -194,7 +222,7 @@ def build_scene(snap: dict) -> dict:
         if key in taken:
             continue
         info = {"is_interactable": True, "occluded_percent": 0}
-        info.update(element.get("interaction") or {})
+        info.update({k: element[k] for k in ("is_interactable", "occluded_percent") if k in element})
         if not info.get("is_interactable", True) or info.get("occluded_percent", 0) >= 50:
             cls = _BLOCKED
         elif element.get("role"):
@@ -206,6 +234,7 @@ def build_scene(snap: dict) -> dict:
                  or element.get("name")
                  or (hint[:16] if hint else None))
         take(_node("element", region,
+                   interaction=element,
                    label=(label[:48] + "…") if label and len(label) > 48 else label,
                    sub=element.get("icon_name"),
                    icon=element.get("icon"),

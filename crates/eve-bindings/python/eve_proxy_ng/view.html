@@ -98,6 +98,38 @@ window.addEventListener("resize", () => { fit(); requestDraw(); });
 
 function requestDraw() { requestAnimationFrame(draw); }
 
+// --- occlusion: node rect minus its occluder rects (occluded_by) ---
+function subtractOcc(rects, ox, oy, ow, oh) {
+  const next = [];
+  for (const [x, y, w, h] of rects) {
+    const l = Math.max(x, ox), t = Math.max(y, oy);
+    const r = Math.min(x + w, ox + ow), b = Math.min(y + h, oy + oh);
+    if (r <= l || b <= t) { next.push([x, y, w, h]); continue; }
+    if (t > y) next.push([x, y, w, t - y]);
+    if (b < y + h) next.push([x, b, w, y + h - b]);
+    const mt = Math.max(y, t), mb = Math.min(y + h, b);
+    if (l > x) next.push([x, mt, l - x, mb - mt]);
+    if (r < x + w) next.push([r, mt, x + w - r, mb - mt]);
+  }
+  return next;
+}
+function visibleRects(n) {
+  if (!n.occ || !n.occ.length) return [[n.x, n.y, n.w, n.h]];
+  let rects = [[n.x, n.y, n.w, n.h]];
+  for (const [ox, oy, ow, oh] of n.occ) {
+    rects = subtractOcc(rects, ox, oy, ow, oh);
+    if (!rects.length) break;
+    if (rects.length > 32) break;  // pathological fragmentation cap
+  }
+  return rects;
+}
+function occludedAt(n, mx, my) {
+  for (const [x, y, w, h] of (n.occ || [])) {
+    if (mx >= x && mx <= x + w && my >= y && my <= y + h) return true;
+  }
+  return false;
+}
+
 function text(s, x, y, color, font, align) {
   ctx.fillStyle = color || COLORS.text;
   ctx.font = font || '12px "Microsoft YaHei", sans-serif';
@@ -124,7 +156,15 @@ function draw() {
   for (const kind of order) {
     for (const n of nodes) {
       if (n.k !== kind || !layers[KIND_OF[kind]]) continue;
-      drawNode(n);
+      const vis = visibleRects(n);
+      if (!vis.length) continue;  // fully occluded — only foreground shows
+      if (vis.length === 1 && !n.occ) { drawNode(n); continue; }
+      for (const [vx, vy, vw, vh] of vis) {
+        ctx.save();
+        ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
+        drawNode(n);
+        ctx.restore();
+      }
     }
   }
 }
@@ -311,7 +351,8 @@ cv.addEventListener("mousemove", (ev) => {
   let hit = null;
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
-    if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) { hit = n; break; }
+    if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h
+        && !occludedAt(n, mx, my)) { hit = n; break; }
   }
   if (!hit) { tip.style.display = "none"; return; }
   const d = hit.d || {};
