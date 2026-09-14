@@ -63,9 +63,9 @@ const icons = new Map();  // path -> {img, ok}
 const layers = { windows: true, overview: true, modules: true, menus: true, elements: true };
 
 const KIND_OF = {
-  window: "windows", overview: "overview", item: "overview",
+  window: "windows", tab: "windows", overview: "overview", item: "overview",
   module: "modules", menu: "menus", menuitem: "menus",
-  hud: "modules", element: "elements",
+  hud: "modules", element: "elements", neocom: "elements",
 };
 const COLORS = {
   cyan: "#2bd9ff", gold: "#f5c400", red: "#ff5f56", green: "#52d273",
@@ -119,8 +119,8 @@ function draw() {
          cv.width / 2, 40, COLORS.red, '14px "Microsoft YaHei"', "center");
     return;
   }
-  const order = ["element", "window", "item", "menuitem", "menu",
-                 "overview", "hud", "module"];
+  const order = ["element", "neocom", "window", "tab", "item", "menuitem",
+                 "menu", "overview", "hud", "module"];
   for (const kind of order) {
     for (const n of nodes) {
       if (n.k !== kind || !layers[KIND_OF[kind]]) continue;
@@ -209,6 +209,39 @@ function drawNode(n) {
       if (d.speed_text) text(d.speed_text, bx - 6, by + 18, COLORS.gold, null, "right");
       break;
     }
+    case "tab": {
+      const selected = n.c === 1;
+      ctx.strokeStyle = selected ? COLORS.cyan + "aa" : COLORS.border;
+      ctx.lineWidth = selected ? 2 : 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      if (selected) {
+        ctx.fillStyle = COLORS.cyan;
+        ctx.fillRect(x + 1, y + h - 3, w - 2, 2);
+        ctx.fillStyle = "#2bd9ff18";
+        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+      }
+      text(clipText(n.l || "", w - 6), x + w / 2, y + h / 2,
+           selected ? "#d6f6ff" : COLORS.dim, null, "center");
+      break;
+    }
+    case "neocom": {
+      ctx.fillStyle = COLORS.panel;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = n.c === 1 ? COLORS.cyan + "77" : COLORS.border;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      const img = icon(n.i);
+      if (img) {
+        const s = Math.min(w, h) - 22;
+        ctx.drawImage(img, x + (w - s) / 2, y + (h - s) / 2 - 4, s, s);
+      } else {
+        ctx.strokeStyle = COLORS.dim + "66";
+        ctx.strokeRect(x + w / 2 - 12, y + h / 2 - 16, 24, 24);
+      }
+      if (n.l) text(clipText(n.l, w - 6), x + w / 2, y + h - 9,
+                    "#9fe8ff", '10px "Microsoft YaHei"', "center");
+      break;
+    }
     default: {  // element
       const stroke = n.c === 1 ? COLORS.cyan + "66"
                    : n.c === 2 ? COLORS.red + "44" : COLORS.dim + "33";
@@ -217,8 +250,14 @@ function drawNode(n) {
       if (n.c === 0) ctx.setLineDash([3, 3]);
       ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
       ctx.setLineDash([]);
+      const img = icon(n.i);
+      let tx = x + 4;
+      if (img) {
+        const s = Math.min(16, h - 4, w / 3);
+        if (s >= 8) { ctx.drawImage(img, x + 4, y + h / 2 - s / 2, s, s); tx = x + 8 + s; }
+      }
       if (n.l && h >= 14 && w >= 30) {
-        text(clipText(n.l, w - 8), x + 4, y + 8,
+        text(clipText(n.l, x + w - tx - 6), tx, y + h / 2,
              n.c === 1 ? "#9fe8ff" : COLORS.dim, '10px "Microsoft YaHei"');
       }
       break;
@@ -281,6 +320,7 @@ cv.addEventListener("mousemove", (ev) => {
     hit.l && ["标签", hit.l],
     d.name && ["名称", d.name],
     d.role && ["角色", d.role],
+    d.hint && ["提示", d.hint],
     hit.s && ["副标", hit.s],
     d.icon_name && ["图标名", d.icon_name],
     d.type_id && ["typeID", d.type_id],

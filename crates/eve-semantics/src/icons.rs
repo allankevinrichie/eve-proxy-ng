@@ -69,45 +69,61 @@ mod tests {
     }
 }
 
-/// Shallowest `res:/` texture below a node — the icon the element
-/// visually presents (buttons carry their icon on themselves or an
-/// immediate sprite child). Bounded BFS: depth ≤ 4, ≤ 64 nodes, so
-/// container-sized elements stay cheap.
+/// The icon an element visually presents: the best `res:/` texture in
+/// its shallow subtree. Collects candidates (any of the three texture
+/// keys, BFS, depth ≤ 6, ≤ 96 nodes) and ranks them — item-icon
+/// locations (`/icons/`, `/windowicons/`, `/brackets/`) beat UI chrome
+/// (`loadingWheel.png`-style decorations), shallower beats deeper —
+/// so a button's real icon wins over incidental spinner/glow textures.
 pub fn element_icon(
     tree: &crate::region::RegionedTree<'_>,
     node: &crate::region::RegionedNode<'_>,
 ) -> Option<String> {
     fn texture_of(node: &crate::region::RegionedNode<'_>) -> Option<String> {
         let entries = node.entries();
-        let value = entries.get("_texturePath").or_else(|| entries.get("texturePath"))?;
+        let value = entries
+            .get("_texturePath")
+            .or_else(|| entries.get("texturePath"))
+            .or_else(|| entries.get("_bgTexturePath"))?;
         match value {
             eve_memory::NodeValue::Str(path) if path.starts_with("res:") => Some(path.clone()),
             _ => None,
         }
     }
-    if let Some(path) = texture_of(node) {
-        return Some(path);
+    fn iconish(path: &str) -> bool {
+        let lowered = path.to_ascii_lowercase();
+        lowered.contains("/icons/") || lowered.contains("/windowicons/") || lowered.contains("/brackets/")
     }
-    let mut level: Vec<&crate::region::RegionedNode<'_>> = tree.children_of(node).collect();
-    let mut budget = 64usize;
-    for _ in 0..4 {
-        if level.is_empty() || budget == 0 {
-            break;
+    let mut best: Option<(i32, usize, String)> = None; // (score, depth, path)
+    let mut consider = |path: String, depth: usize| {
+        let score = if iconish(&path) { 2 } else { 0 } * 8 - depth as i32;
+        if best.as_ref().map(|(s, _, _)| score > *s).unwrap_or(true) {
+            best = Some((score, depth, path));
         }
+    };
+    if let Some(path) = texture_of(node) {
+        consider(path, 0);
+    }
+    let mut level: Vec<(&crate::region::RegionedNode<'_>, usize)> =
+        tree.children_of(node).map(|c| (c, 1)).collect();
+    let mut budget = 96usize;
+    while !level.is_empty() && budget > 0 {
         let mut next = Vec::new();
-        for child in level {
+        for (child, depth) in level {
             if budget == 0 {
                 break;
             }
             budget -= 1;
             if let Some(path) = texture_of(child) {
-                return Some(path);
+                consider(path, depth);
             }
-            next.extend(tree.children_of(child));
+            if depth < 6 {
+                next.extend(tree.children_of(child).map(|c| (c, depth + 1)));
+            }
         }
         level = next;
     }
-    None
+    best.map(|(_, _, path)| path)
 }
 
 /// Semantic name for an icon resource path: the type family table

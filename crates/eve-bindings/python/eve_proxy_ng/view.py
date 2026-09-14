@@ -73,6 +73,15 @@ def build_scene(snap: dict) -> dict:
     """
     nodes: list[dict] = []
     taken: set[tuple] = set()
+    elements = snap.get("interaction_elements") or []
+    # Region -> icon, so special nodes (neocom…) can reuse the icon the
+    # interaction extractor found for the same on-screen button.
+    icon_by_region: dict[tuple, str] = {}
+    for element in elements:
+        region = element.get("region") or {}
+        if element.get("icon"):
+            key = (region.get("x"), region.get("y"), region.get("width"), region.get("height"))
+            icon_by_region.setdefault(key, element["icon"])
 
     def take(node: dict) -> None:
         # Degenerate regions (e.g. collapsed scroll containers reporting
@@ -81,6 +90,20 @@ def build_scene(snap: dict) -> dict:
             return
         taken.add((node["x"], node["y"], node["w"], node["h"]))
         nodes.append(node)
+
+    # --- neocom (left button strip: dedicated rendering with icons) ---
+    for button in (snap.get("neocom") or {}).get("buttons") or []:
+        region = button.get("region") or {}
+        key = (region.get("x"), region.get("y"), region.get("width"), region.get("height"))
+        name = button.get("name") or ""
+        label = (name.removesuffix("Btn").removesuffix("DataNode")
+                 .removesuffix("Button").removesuffix("Node")) or name
+        take(_node("neocom", region,
+                   label=label,
+                   sub=button.get("hint"),
+                   icon=icon_by_region.get(key),
+                   cls=_INTERACTABLE,
+                   detail={"name": name, "hint": button.get("hint")}))
 
     # --- windows (frame + caption) ---
     for key, title in (
@@ -95,6 +118,10 @@ def build_scene(snap: dict) -> dict:
                 "kind": key, "caption": caption,
             }))
             if key == "overview_windows":
+                for tab in window.get("tabs") or []:
+                    take(_node("tab", tab.get("region"), label=tab.get("name"),
+                               cls=_INTERACTABLE if tab.get("is_selected") else _PASSIVE,
+                               detail={"kind": "tab", "is_selected": tab.get("is_selected")}))
                 for entry in window.get("entries") or []:
                     take(_node("overview", entry.get("region"),
                                label=entry.get("object_name"),
@@ -161,7 +188,7 @@ def build_scene(snap: dict) -> dict:
         }))
 
     # --- generic interaction elements (dedup against special nodes) ---
-    for element in snap.get("interaction_elements") or []:
+    for element in elements:
         region = element.get("region") or {}
         key = (region.get("x"), region.get("y"), region.get("width"), region.get("height"))
         if key in taken:
@@ -174,7 +201,10 @@ def build_scene(snap: dict) -> dict:
             cls = _INTERACTABLE
         else:
             cls = _PASSIVE
-        label = element.get("text") or element.get("role") or element.get("name")
+        hint = element.get("hint")
+        label = (element.get("text") or element.get("role")
+                 or element.get("name")
+                 or (hint[:16] if hint else None))
         take(_node("element", region,
                    label=(label[:48] + "…") if label and len(label) > 48 else label,
                    sub=element.get("icon_name"),
