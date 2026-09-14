@@ -88,13 +88,24 @@ def ensure_py27(tools: Path) -> Path:
         urllib.request.urlretrieve(PY27_MSI, msi)
     target = tools / "py27"
     print(f"admin-extracting {msi.name} -> {target} (no install, no admin)…")
-    subprocess.run(
-        ["msiexec", "/a", str(msi), "/qn", f"TARGETDIR={target}"],
-        check=True,
+    # msiexec administrative installs reject relative TARGETDIR (1603).
+    log = tools / "py27-extract.log"
+    result = subprocess.run(
+        [
+            "msiexec", "/a", str(msi.resolve()), "/qn",
+            f"TARGETDIR={target.resolve()}",
+            "/L*V", str(log.resolve()),
+        ],
+        capture_output=True, text=True,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    if not python.is_file():
-        raise SystemExit("py2.7 extract failed: python.exe not found")
+    if result.returncode != 0 or not (target / "python.exe").is_file():
+        tail = ""
+        try:
+            tail = "\n".join(log.read_text(errors="replace").splitlines()[-15:])
+        except OSError:
+            pass
+        raise SystemExit(f"py2.7 extract failed (rc={result.returncode}):\n{tail}")
     return python
 
 
