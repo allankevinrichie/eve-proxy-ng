@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  wheel:
+    name: Build distribution wheel
+    runs-on: windows-latest
+    env:
+      FFMPEG_DIR: ${{ github.workspace }}\third_party\ffmpeg-7.1-win64-gpl-shared
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+      PYO3_PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM + Python toolchain
+        run: |
+          choco install llvm -y --no-progress
+          pip install maturin mkdocs-material "mkdocstrings[python]" ruff
+
+      - name: Cache ffmpeg 7.1 shared build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: third_party/ffmpeg-7.1-win64-gpl-shared
+          key: ffmpeg-7.1-win64-gpl-shared-autobuild-2026-07-31
+
+      - name: Download ffmpeg 7.1 (BtbN GPL shared)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath third_party
+          Rename-Item "third_party/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1" "ffmpeg-7.1-win64-gpl-shared"
+
+      - name: Bootstrap py2.7 extractor runtime
+        shell: pwsh
+        run: |
+          # scripts/package.py stages tools/py27 into the wheel; fetch the
+          # official MSI and admin-extract it (no install, no admin).
+          New-Item -ItemType Directory -Force -Path tools | Out-Null
+          $msi = "tools/python-2.7.18.amd64.msi"
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/2.7.18/python-2.7.18.amd64.msi" -OutFile $msi
+          Start-Process msiexec -ArgumentList "/a", "`"$msi`"", "/qn", "TARGETDIR=`"$pwd\tools\py27`"" -Wait -NoNewWindow
+          if (-not (Test-Path "tools/py27/python.exe")) { throw "py2.7 extract failed" }
+
+      - name: Package wheel (eve-cli + ffmpeg DLLs + py2.7 runtime + docs)
+        run: python scripts/package.py
+
+      - name: Smoke test wheel
+        shell: pwsh
+        run: |
+          pip install --no-deps (Get-ChildItem target/wheels/*.whl | Select-Object -First 1).FullName
+          python -c "import eve_proxy_ng as e; i = e.resources_info(); assert i['type_count'] > 60000, i; print('release wheel ok:', i)"
+          python tests/check_stubs.py
+
+      - name: Stage standalone CLI artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-cli | Out-Null
+          Copy-Item target/release/eve-cli.exe dist-cli/
+          Copy-Item third_party/ffmpeg-7.1-win64-gpl-shared/bin/*.dll dist-cli/
+          Compress-Archive dist-cli eve-cli-standalone-windows-x64.zip
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: target/wheels/*.whl
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/wheels/*.whl
+            eve-cli-standalone-windows-x64.zip
+          generate_release_notes: true

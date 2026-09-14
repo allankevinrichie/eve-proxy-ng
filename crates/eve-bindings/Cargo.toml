@@ -1,0 +1,16 @@
+[package]
+name = "eve-bindings"
+description = "Python bindings for the perception and semantic layers."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+eve-memory = { workspace = true }
+eve-semantics = { workspace = true }
+pyo3 = { version = "0.23", features = ["abi3-py312"] }
+serde_json = { workspace = true }

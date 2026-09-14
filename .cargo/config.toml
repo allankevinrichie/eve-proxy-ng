@@ -1,0 +1,5 @@
+[env]
+# pyo3 build script needs a Python interpreter; the project venv provides
+# one. NOTE: outer env (e.g. CI exporting PYO3_PYTHON) takes precedence —
+# cargo [env] does not override existing variables by default.
+PYO3_PYTHON = { value = "C:/Users/allan/projects/eve-ng/.venv/Scripts/python.exe", relative = false }

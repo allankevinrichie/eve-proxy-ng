@@ -1,0 +1,205 @@
+/* ==========================================================================
+   eve-ng 文档主题 —— 对齐 EVE Online 官网的深空科幻风格
+   Deep-space sci-fi theme aligned with the EVE Online website:
+   near-black navy background, cyan primary accent, gold highlights.
+   ==========================================================================
+*/
+
+/* ---- 自定义配色方案（mkdocs.yml: scheme: eve-dark, primary/accent: custom）---- */
+[data-md-color-scheme="eve-dark"] {
+  color-scheme: dark;
+
+  --md-primary-fg-color:        #0b1219;
+  --md-primary-fg-color--light: #16222e;
+  --md-primary-fg-color--dark:  #060a0f;
+  --md-primary-bg-color:        #d6f6ff;
+  --md-primary-bg-color--light: #9fe8ff;
+
+  --md-accent-fg-color:        #2bd9ff;
+  --md-accent-fg-color--transparent: #2bd9ff1a;
+
+  --md-typeset-a-color: #46d8ff;
+
+  --md-default-fg-color:        #d3dde8;
+  --md-default-fg-color--light: #a4b4c4;
+  --md-default-fg-color--lighter:#77879a;
+  --md-default-fg-color--lightest:#4a5a6c;
+  --md-default-bg-color:        #0a0e14;
+  --md-default-bg-color--light: #10161f;
+  --md-default-bg-color--lighter:#151d28;
+  --md-default-bg-color--lightest:#1b2532;
+
+  --md-code-fg-color:           #c9e3f5;
+  --md-code-bg-color:           #0d131b;
+  --md-code-hl-color:           #2bd9ff33;
+
+  --md-footer-fg-color:        #a4b4c4;
+  --md-footer-fg-color--light: #d3dde8;
+  --md-footer-bg-color:        #070b10;
+  --md-footer-bg-color--dark:  #04070b;
+
+  --md-shadow-z1: 0 0.2rem 0.5rem #00000066;
+  --md-shadow-z2: 0 0.25rem 0.8rem #000000aa;
+  --md-shadow-z3: 0 0.4rem 1.2rem #000000cc;
+}
+
+/* ---- 标题字体：Rajdhani（科幻感棱角，靠近官网标题气质）---- */
+@import url("https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&display=swap");
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-header__title,
+.md-tabs__link {
+  font-family: "Rajdhani", "Inter", "Noto Sans SC", sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.md-typeset h1 { font-weight: 700; }
+.md-typeset h2 {
+  font-weight: 600;
+  /* 标题左侧的青色能量条 */
+  border-inline-start: 3px solid var(--md-accent-fg-color);
+  padding-inline-start: 0.6em;
+}
+
+/* ---- 顶栏：深空渐变 + 底部青色辉光线 ---- */
+.md-header {
+  background:
+    linear-gradient(180deg, #0c141d 0%, #0a0e14 100%);
+  box-shadow: inset 0 -2px 0 #2bd9ff, 0 0.2rem 0.6rem #000a;
+  border-bottom: none;
+}
+
+/* ---- 侧边栏当前项发光 ---- */
+.md-nav__link--active {
+  color: var(--md-accent-fg-color);
+}
+.md-nav__item--active .md-nav__link {
+  text-shadow: 0 0 12px #2bd9ff55;
+}
+
+/* ---- 主内容区微调 ---- */
+.md-main__inner { margin-top: 1.2rem; }
+.md-typeset { font-size: 0.72rem; }
+.md-typeset p, .md-typeset li { line-height: 1.85; }
+
+/* ---- 表格 ---- */
+.md-typeset table:not([class]) {
+  border: 1px solid #1b2532;
+  box-shadow: 0 0 1.4rem #2bd9ff0e;
+  font-size: 0.66rem;
+}
+.md-typeset table:not([class]) th {
+  background: #101a24;
+  color: #7fe4ff;
+  font-family: "Rajdhani", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+/* ---- 代码块：深色面板 + 青色语言标签 ---- */
+.md-typeset code { background: #0d1520; border: 1px solid #16202d; }
+.md-typeset pre > code { border: none; }
+.md-typeset pre {
+  border: 1px solid #16202d;
+  border-radius: 0.4rem;
+  box-shadow: inset 0 0 2rem #00000088;
+}
+.md-clipboard { color: #4a5a6c; }
+.md-clipboard:hover { color: var(--md-accent-fg-color); }
+
+/* ---- admonition：青金双色系 ---- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 0.4rem;
+  border: 1px solid #16202d;
+  background: #0d141d;
+  box-shadow: 0 0 1.6rem #2bd9ff0c;
+}
+.md-typeset .admonition-title {
+  font-family: "Rajdhani", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* ---- 首页 hero：星云渐变 + 青色辉光 ---- */
+.eve-hero {
+  position: relative;
+  margin: -0.6rem -0.8rem 1.6rem;
+  padding: 3.2rem 2rem 2.8rem;
+  text-align: center;
+  background:
+    radial-gradient(ellipse 60% 80% at 70% -10%, #12354966, transparent),
+    radial-gradient(ellipse 50% 70% at 20% 110%, #0f2b3d55, transparent),
+    linear-gradient(180deg, #0c141d 0%, #0a0e14 100%);
+  border-bottom: 1px solid #14212e;
+  box-shadow: inset 0 -18px 32px -22px #2bd9ff4d;
+}
+.eve-hero h1 {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 2.6rem;
+  color: #eaf7ff;
+  text-shadow:
+    0 0 18px #2bd9ff55,
+    0 0 46px #2bd9ff22;
+}
+.eve-hero h1 .twemoji { color: #2bd9ff; }
+.eve-hero p {
+  font-size: 0.86rem;
+  color: #a4b4c4;
+}
+.eve-hero p strong { color: #d6f6ff; }
+
+/* ---- 首页卡片：悬停青色升起 ---- */
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > ol > li {
+  border: 1px solid #16202d;
+  background: linear-gradient(180deg, #0e151e 0%, #0b1119 100%);
+  border-radius: 0.45rem;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid.cards > ol > li:hover {
+  border-color: #2bd9ff66;
+  box-shadow: 0 0 1.8rem #2bd9ff22, 0 0.3rem 0.9rem #000a;
+  transform: translateY(-2px);
+}
+.md-typeset .grid.cards p { font-size: 0.64rem; }
+
+/* 卡片标题里的青色图标 */
+.eve-cyan { color: #2bd9ff; }
+
+/* ---- 按钮：官网风格实心青 + 描边幽灵 ---- */
+.md-typeset .md-button {
+  font-family: "Rajdhani", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  border-radius: 0.3rem;
+}
+.md-typeset .md-button--primary {
+  background: linear-gradient(180deg, #35cdec 0%, #14a8c9 100%);
+  color: #04222c;
+  border: none;
+  box-shadow: 0 0 1.6rem #2bd9ff3d;
+}
+.md-typeset .md-button--primary:hover { box-shadow: 0 0 2.4rem #2bd9ff66; }
+.md-typeset .md-button {
+  color: #7fe4ff;
+  border: 1px solid #2bd9ff66;
+}
+.md-typeset .md-button:hover {
+  color: #d6f6ff;
+  border-color: #2bd9ff;
+  background: #2bd9ff14;
+}
+
+/* ---- mkdocstrings API 文档微调 ---- */
+.doc-class .doc-contents,
+.doc-function .doc-contents {
+  border-inline-start: 2px solid #16202d;
+}
+.doc-heading code { background: transparent; }
+
+/* ---- 搜索弹层 ---- */
+.md-search__form { background: #0d1520; }

@@ -1,0 +1,23 @@
+[package]
+name = "eve-cli"
+description = "Command line tools: client discovery, memory dumps, UI tree reads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "eve-cli"
+path = "src/main.rs"
+
+[dependencies]
+eve-memory = { workspace = true }
+eve-semantics = { workspace = true }
+eve-recorder = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+flate2 = "1"
+ureq = "2"
+bzip2 = "0.4"
+csv = "1"

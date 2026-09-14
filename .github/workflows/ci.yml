@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-test:
+    name: Rust tests (release)
+    runs-on: windows-latest
+    env:
+      FFMPEG_DIR: ${{ github.workspace }}\third_party\ffmpeg-7.1-win64-gpl-shared
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+      # .cargo/config.toml pins a dev-machine path; the outer env wins
+      # (cargo [env] does not override by default).
+      PYO3_PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM (bindgen)
+        run: choco install llvm -y --no-progress
+
+      - name: Cache ffmpeg 7.1 shared build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: third_party/ffmpeg-7.1-win64-gpl-shared
+          key: ffmpeg-7.1-win64-gpl-shared-autobuild-2026-07-31
+
+      - name: Download ffmpeg 7.1 (BtbN GPL shared)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath third_party
+          Rename-Item "third_party/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1" "ffmpeg-7.1-win64-gpl-shared"
+
+      - name: cargo test
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:FFMPEG_DIR\bin;$env:PATH"
+          cargo test --workspace --release
+        # Sample-dependent integration tests self-skip without samples/.
+
+  python-wheel:
+    name: Python wheel build + smoke
+    runs-on: windows-latest
+    needs: rust-test
+    env:
+      FFMPEG_DIR: ${{ github.workspace }}\third_party\ffmpeg-7.1-win64-gpl-shared
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install LLVM + maturin
+        run: |
+          choco install llvm -y --no-progress
+          pip install maturin
+
+      - name: Cache ffmpeg 7.1 shared build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: third_party/ffmpeg-7.1-win64-gpl-shared
+          key: ffmpeg-7.1-win64-gpl-shared-autobuild-2026-07-31
+
+      - name: Download ffmpeg 7.1 (BtbN GPL shared)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath third_party
+          Rename-Item "third_party/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1" "ffmpeg-7.1-win64-gpl-shared"
+
+      - name: Build wheel
+        run: maturin build --release -m crates/eve-bindings/Cargo.toml
+
+      - name: Install + smoke test
+        shell: pwsh
+        run: |
+          pip install --no-deps (Get-ChildItem target/wheels/*.whl | Select-Object -First 1).FullName
+          python -c "import eve_proxy_ng as e; i = e.resources_info(); assert i['type_count'] > 60000, i; assert e.type_name(645) == '多米尼克斯级'; print('wheel smoke ok:', i)"
+          python tests/check_stubs.py
+
+  docs:
+    name: Docs build (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install docs toolchain
+        run: pip install mkdocs-material "mkdocstrings[python]" ruff
+
+      - name: Build docs
+        run: mkdocs build --strict

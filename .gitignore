@@ -1,0 +1,20 @@
+/target/
+/tools/
+/third_party/
+/samples/
+/site/
+/.venv/
+/dist-cli/
+__pycache__/
+*.zip
+*.msi
+process-sample-*.json
+eve-online-memory-reading-*.json
+# Staged into the wheel by scripts/package.py (build artifacts)
+crates/eve-bindings/python/eve_proxy_ng/bin/
+crates/eve-bindings/python/eve_proxy_ng/docs/
+crates/eve-bindings/python/eve_proxy_ng/tools/
+# Raw derived tables regenerate via scripts/derive_client_resources.py;
+# the gz twin is the committed embed source.
+/data/*.json
+.zcode/

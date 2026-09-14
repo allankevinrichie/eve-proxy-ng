@@ -1,0 +1,77 @@
+site_name: eve-proxy-ng
+site_url: https://allankevinrichie.github.io/eve-proxy-ng/
+site_description: EVE Online 感知与语义层 —— Rust 实现、Python 绑定与 eve-cli，面向 AI agent
+site_author: eve-proxy-ng contributors
+copyright: 仅供学习研究 · 记忆读取属 EULA 违规行为，风险自担
+
+theme:
+  name: material
+  language: zh
+  favicon: assets/favicon.svg
+  logo: assets/logo.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  # EVE 官网为纯深色科幻风：不提供亮色切换。
+  palette:
+    scheme: eve-dark
+    primary: custom
+    accent: custom
+  features:
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+
+extra_css:
+  - stylesheets/eve.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [crates/eve-bindings/python]
+          options:
+            docstring_style: google
+            show_source: false
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            members_order: source
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.caret
+  - pymdownx.tilde
+  - tables
+
+nav:
+  - 首页: index.md
+  - 快速上手: quickstart.md
+  - 使用指南:
+      - 感知与交互: guides/perception.md
+      - 会话录制与分析: guides/recording.md
+      - 资源与图标识别: guides/resources.md
+      - 故障排查: guides/troubleshooting.md
+  - 参考:
+      - Python API: api.md
+      - eve-cli 参考: cli.md
+      - 录制数据格式: data-format.md

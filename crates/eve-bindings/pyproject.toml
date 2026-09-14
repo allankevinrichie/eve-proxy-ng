@@ -1,0 +1,40 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "eve-proxy-ng"
+description = "EVE Online perception and semantics for Python agents — client discovery, UI-tree memory reading, semantic snapshots, session recording, and the eve-cli tool"
+requires-python = ">=3.12"
+license = "MIT"
+version = "0.1.0"
+authors = [{ name = "eve-proxy-ng contributors" }]
+readme = "../../README.md"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Games/Entertainment",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Documentation = "https://github.com/eve-proxy-ng/eve-proxy-ng#readme"
+
+[project.scripts]
+eve-cli = "eve_proxy_ng.cli:main"
+
+[tool.maturin]
+# Mixed Rust/Python project: the cdylib lands as eve_proxy_ng/_core.pyd next to
+# the Python sources in python/eve_proxy_ng/. abi3 is enabled via the Cargo
+# feature in Cargo.toml. `python/eve_proxy_ng/bin` (eve-cli.exe + ffmpeg DLLs)
+# and `python/eve_proxy_ng/docs` (offline HTML docs) are staged by
+# scripts/package.py before `maturin build` and ship inside the wheel.
+python-source = "python"
+module-name = "eve_proxy_ng._core"

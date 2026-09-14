@@ -1,0 +1,17 @@
+[package]
+name = "eve-recorder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+eve-memory = { workspace = true }
+eve-semantics = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+windows = { workspace = true }
+ffmpeg-next = { version = "=9.0.0", default-features = false, features = ["codec", "format", "software-scaling", "software-resampling"] }
+
+[dev-dependencies]
