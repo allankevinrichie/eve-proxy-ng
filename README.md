@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/allankevinrichie/eve-proxy-ng/actions/workflows/ci.yml/badge.svg)](https://github.com/allankevinrichie/eve-proxy-ng/actions/workflows/ci.yml)
 [![Release](https://github.com/allankevinrichie/eve-proxy-ng/actions/workflows/release.yml/badge.svg)](https://github.com/allankevinrichie/eve-proxy-ng/actions/workflows/release.yml)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2bd9ff)](https://allankevinrichie.github.io/eve-proxy-ng/)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2bd9ff)](https://www.aiyoggle.me/eve-proxy-ng/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 
@@ -10,7 +10,7 @@
 
 Rust 实现 + Python 绑定（`pip install eve-proxy-ng`，内置 `eve-cli` 与全部依赖）+ 三路同步会话录制。支持网易国服（曙光服 / 经典服）与国际服的多客户端内存读取：游戏 UI → 语义快照（总览行、模块按钮（精确 typeID + 中文名）、菜单、货舱、遮挡与命中测试），全部资源（类型表/本地化）只从本地客户端提取。
 
-[快速上手](#快速开始) · [在线文档](https://allankevinrichie.github.io/eve-proxy-ng/) · [Python API](https://allankevinrichie.github.io/eve-proxy-ng/api/) · [CLI 参考](https://allankevinrichie.github.io/eve-proxy-ng/cli/)
+[快速上手](#快速开始) · [在线文档](https://www.aiyoggle.me/eve-proxy-ng/) · [Python API](https://www.aiyoggle.me/eve-proxy-ng/api/) · [CLI 参考](https://www.aiyoggle.me/eve-proxy-ng/cli/)
 
 > ⚠️ 内存读取属 EULA 违规行为，本项目仅用于学习研究，风险自担。
 

@@ -106,7 +106,17 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="output JSON (default data/types.<flavor>.json)")
     ap.add_argument("--tools", default=str(ROOT / "tools"), help="dir for the py2.7 bootstrap")
     ap.add_argument("--force", action="store_true", help="re-derive even if output exists")
+    ap.add_argument(
+        "--bootstrap-py27",
+        action="store_true",
+        help="only ensure the py2.7 extractor runtime exists (CI stage step), then exit",
+    )
     args = ap.parse_args()
+
+    if args.bootstrap_py27:
+        py27 = ensure_py27(Path(args.tools))
+        print(f"py2.7 ready: {py27}")
+        return 0
 
     out = Path(args.out) if args.out else ROOT / "data" / f"types.{args.flavor}.json"
     if out.is_file() and not args.force:

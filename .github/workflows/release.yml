@@ -43,16 +43,14 @@ jobs:
           Expand-Archive ffmpeg.zip -DestinationPath third_party
           Rename-Item "third_party/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-gpl-shared-7.1" "ffmpeg-7.1-win64-gpl-shared"
 
+      - name: Cache py2.7 runtime
+        uses: actions/cache@v4
+        with:
+          path: tools/py27
+          key: py27-2.7.18-amd64
+
       - name: Bootstrap py2.7 extractor runtime
-        shell: pwsh
-        run: |
-          # scripts/package.py stages tools/py27 into the wheel; fetch the
-          # official MSI and admin-extract it (no install, no admin).
-          New-Item -ItemType Directory -Force -Path tools | Out-Null
-          $msi = "tools/python-2.7.18.amd64.msi"
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/2.7.18/python-2.7.18.amd64.msi" -OutFile $msi
-          Start-Process msiexec -ArgumentList "/a", "`"$msi`"", "/qn", "TARGETDIR=`"$pwd\tools\py27`"" -Wait -NoNewWindow
-          if (-not (Test-Path "tools/py27/python.exe")) { throw "py2.7 extract failed" }
+        run: python scripts/derive_client_resources.py --bootstrap-py27 --tools tools
 
       - name: Package wheel (eve-cli + ffmpeg DLLs + py2.7 runtime + docs)
         run: python scripts/package.py
