@@ -262,9 +262,50 @@ def build_scene(snap: dict) -> dict:
                        "occluded_percent": info.get("occluded_percent"),
                    }))
 
-    # --- canvas size + stats ---
-    width = max((n["x"] + n["w"] for n in nodes), default=1280)
-    height = max((n["y"] + n["h"] for n in nodes), default=720)
+    # --- client canvas: the game window's own area (from the root
+    # layer regions), NOT the union of node extents (scroll strips and
+    # virtualized grids carry off-screen cells far beyond the window). ---
+    client_w = max(((l.get("region") or {}).get("x", 0) + (l.get("region") or {}).get("width", 0)
+                    for l in snap.get("layers") or []), default=0)
+    client_h = max(((l.get("region") or {}).get("y", 0) + (l.get("region") or {}).get("height", 0)
+                    for l in snap.get("layers") or []), default=0)
+    if client_w <= 0:
+        client_w = max((n["x"] + n["w"] for n in nodes), default=1280)
+    if client_h <= 0:
+        client_h = max((n["y"] + n["h"] for n in nodes), default=720)
+
+    # --- window clipping: in-game, window content is clipped to the
+    # window frame (scroll strips show only part). Clip every node to
+    # the smallest enclosing window-ish container (type carries
+    # Wnd/Window, or a dedicated window/menu kind) so overflow cells
+    # stay inside the frame like the real client renders them. ---
+    clippers = [
+        (n["x"], n["y"], n["w"], n["h"])
+        for n in nodes
+        if n["k"] in ("window", "menu")
+        or (("Wnd" in ((n.get("d") or {}).get("type_name") or ""))
+            or ("Window" in ((n.get("d") or {}).get("type_name") or "")))
+        and n["w"] * n["h"] >= 40000
+    ]
+    if clippers:
+        for n in nodes:
+            cx, cy = n["x"] + n["w"] // 2, n["y"] + n["h"] // 2
+            best = None
+            for (cx0, cy0, cw, ch) in clippers:
+                if (cx0, cy0, cw, ch) == (n["x"], n["y"], n["w"], n["h"]):
+                    continue
+                if cx0 <= cx < cx0 + cw and cy0 <= cy < cy0 + ch and cw * ch >= 2 * n["w"] * n["h"]:
+                    if best is None or cw * ch < best[2] * best[3]:
+                        best = (cx0, cy0, cw, ch)
+            if best:
+                n["clip"] = list(best)
+
+    # Nodes entirely outside the client area are not rendered by the game.
+    nodes[:] = [n for n in nodes
+                if n["x"] < client_w and n["y"] < client_h
+                and n["x"] + n["w"] > 0 and n["y"] + n["h"] > 0]
+
+    width, height = client_w, client_h
     state = snap.get("game_state") or {}
     return {
         "t": int(time.time() * 1000),

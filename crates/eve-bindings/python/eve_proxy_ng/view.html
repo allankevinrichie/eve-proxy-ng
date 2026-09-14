@@ -115,14 +115,32 @@ function subtractOcc(rects, ox, oy, ow, oh) {
   return next;
 }
 function visibleRects(n) {
-  if (!n.occ || !n.occ.length) return [[n.x, n.y, n.w, n.h]];
+  if (!n.occ || !n.occ.length) {
+    if (!n.clip) return [[n.x, n.y, n.w, n.h]];
+    const r = intersect([n.x, n.y, n.w, n.h], n.clip);
+    return r ? [r] : [];
+  }
   let rects = [[n.x, n.y, n.w, n.h]];
+  if (n.clip) {
+    rects = rects.flatMap(r => { const x = intersect(r, n.clip); return x ? [x] : []; });
+  }
   for (const [ox, oy, ow, oh] of n.occ) {
     rects = subtractOcc(rects, ox, oy, ow, oh);
     if (!rects.length) break;
     if (rects.length > 32) break;  // pathological fragmentation cap
   }
   return rects;
+}
+function intersect(a, c) {
+  const l = Math.max(a[0], c[0]), t = Math.max(a[1], c[1]);
+  const r = Math.min(a[0] + a[2], c[0] + c[2]), b = Math.min(a[1] + a[3], c[1] + c[3]);
+  if (r <= l || b <= t) return null;
+  return [l, t, r - l, b - t];
+}
+function outsideClip(n, mx, my) {
+  if (!n.clip) return false;
+  const [cx, cy, cw, ch] = n.clip;
+  return !(mx >= cx && mx < cx + cw && my >= cy && my < cy + ch);
 }
 function occludedAt(n, mx, my) {
   for (const [x, y, w, h] of (n.occ || [])) {
@@ -370,7 +388,7 @@ cv.addEventListener("mousemove", (ev) => {
   for (let i = nodes.length - 1; i >= 0; i--) {
     const n = nodes[i];
     if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h
-        && !occludedAt(n, mx, my)) { hit = n; break; }
+        && !occludedAt(n, mx, my) && !outsideClip(n, mx, my)) { hit = n; break; }
   }
   if (!hit) { tip.style.display = "none"; return; }
   const d = hit.d || {};
