@@ -44,7 +44,7 @@ snap = reader.read_snapshot()
 | `context_menus` / `util_menus` | 右键菜单与工具菜单（含菜单项图标） | 菜单操作 |
 | `inventory_windows` | 货舱/机库物品（数量/分组） | 物流 |
 | `neocom` | Neocom 按钮组 | 导航入口 |
-| `interaction_elements[]` | **全部可操作元素**：role/text/hint/`icon`/`icon_name`/交互性 | 通用操作层 |
+| `interaction_elements[]` | **全部可操作元素**：`label`（人可读标识，text>role>hint>name 同源优先级）/role/text/hint/`icon`/`icon_name`/交互性 | 通用操作层 |
 | `scrollable_views[]` | 滚动视口三元组 + `scroll_to_reveal_px` | 列表定位 |
 
 !!! note "帧语义"
@@ -122,3 +122,12 @@ client.restore_window()
 - [会话录制与分析](recording.md)——采集人类操作数据集
 - [资源与图标识别](resources.md)——名字与图标的解析策略
 - [Python API](../api.md)——全部接口细节
+
+### 元素的"如实"几何字段
+
+- `client_size`（快照顶层）：游戏客户区尺寸，所有 region 的坐标系
+- `region`：布局矩形（含虚拟化列表的屏外格）
+- `visible_region`：被滚动视口/窗口框裁剪后的**实际可见矩形**（仅当与 region 不同时出现）
+- `is_on_screen`：`false` = 完全在窗口框/客户区外（游戏不渲染，如虚拟列表的屏外格）
+
+操作前判定链：`is_on_screen` → `visible_region`（点要落在可见部分）→ `is_interactable`/`occluded_by`。

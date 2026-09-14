@@ -222,11 +222,14 @@ mod tests {
             address: address.to_string(),
             name: None,
             role: None,
+            label: None,
             text: Some(text.into()),
             hint: None,
             icon: None,
             icon_name: None,
             region: DisplayRegion { x: 0, y: 0, width: 10, height: 10 },
+            visible_region: None,
+            is_on_screen: true,
             interaction: InteractionInfo::default(),
         }
     }

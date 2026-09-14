@@ -71,7 +71,7 @@ record-<时间戳>/
 
 回放方法：
 
-1. 按 `snapshot_full` 建立初始状态；
+1. 按 `snapshot_full` 建立初始状态（顶层含 `client_size`；元素带 `label`/`visible_region`/`is_on_screen` 等如实几何字段）；
 2. 逐帧 fold `snapshot_delta`：
    - `cleared` 列出的区段置 null；
    - keyed 区段（如 `interaction_elements`）按元素 `address` 应用

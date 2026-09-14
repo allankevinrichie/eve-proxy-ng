@@ -348,7 +348,20 @@ pub struct InteractionElement {
     /// resource tables, or the wordy bracket/chrome stem.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon_name: Option<String>,
+    /// The human-readable identification string — what a person would
+    /// call this control. Priority: `text` > `role` > `hint` > `name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     pub region: DisplayRegion,
+    /// The region actually visible on screen: the raw region clipped
+    /// by enclosing scroll viewports / window frames (virtualized
+    /// strips lay cells out far beyond the frame). Some only when it
+    /// differs from `region`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visible_region: Option<DisplayRegion>,
+    /// False when the element lies entirely outside the client area
+    /// (off-screen cells of virtualized lists).
+    pub is_on_screen: bool,
     #[serde(flatten)]
     pub interaction: InteractionInfo,
 }
@@ -363,7 +376,24 @@ pub struct InteractionElement {
 /// indexed collect keeps the tree (z-) order of the output.
 pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionElement> {
     use rayon::prelude::*;
-    let root_area = tree.root().total_region.area().max(1);
+    let root = tree.root();
+    let root_area = root.total_region.area().max(1);
+    // The client area = the root's OWN rect (UIRoot display size) —
+    // virtualized strips lay cells out far beyond it.
+    let client = crate::region::DisplayRegion {
+        x: 0,
+        y: 0,
+        width: root.region.width,
+        height: root.region.height,
+    };
+    // Parent index map (pre-order): one O(n) pass for cheap ancestor
+    // walks during clip computation.
+    let mut parent = vec![0usize; tree.all_nodes().len()];
+    for node in tree.all_nodes() {
+        for child in tree.children_of(node) {
+            parent[child.index] = node.index;
+        }
+    }
     let candidates: Vec<&crate::region::RegionedNode<'_>> = tree
         .all_regioned()
         .filter(|node| node.depth >= 1)
@@ -389,24 +419,92 @@ pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionE
             let icon_name = icon
                 .as_deref()
                 .and_then(crate::icons::semantic_icon_name);
+            let role = crate::roles::semantic_role(
+                node.type_name(),
+                node.name(),
+                text.as_deref().or(hint.as_deref()),
+            );
+            // The human-readable identification string, priority
+            // text > role > hint > name (hint is user-facing wording,
+            // beats dev node names like CloseButtonIcon).
+            let label = text
+                .clone()
+                .or_else(|| role.clone().map(String::from))
+                .or_else(|| hint.clone())
+                .or_else(|| node.name().map(str::to_string));
+            let (visible_region, is_on_screen) = visible_geometry(tree, &parent, node, client);
             InteractionElement {
                 type_name: node.type_name().to_string(),
                 address: node.node.address.0.to_string(),
                 name: node.name().map(str::to_string),
-                role: crate::roles::semantic_role(
-                    node.type_name(),
-                    node.name(),
-                    text.as_deref().or(hint.as_deref()),
-                ),
+                role,
+                label,
                 text,
                 hint,
                 icon,
                 icon_name,
                 region: node.total_region,
+                visible_region,
+                is_on_screen,
                 interaction: interaction_info(tree, node),
             }
         })
         .collect()
+}
+
+/// An ancestor that clips its subtree's rendering: scroll viewports
+/// and window-style containers (in-game, window content is cut to the
+/// window frame).
+fn is_ancestor_clipper(node: &RegionedNode<'_>) -> bool {
+    is_scroll_clipper(node) || {
+        let t = node.type_name();
+        t.contains("Wnd") || t.contains("Window")
+    }
+}
+
+/// A node's own absolute rect: the total region's origin (totals begin
+/// with the own rect) with the own region's extents.
+fn own_abs(node: &RegionedNode<'_>) -> crate::region::DisplayRegion {
+    crate::region::DisplayRegion {
+        x: node.total_region.x,
+        y: node.total_region.y,
+        width: node.region.width.max(0),
+        height: node.region.height.max(0),
+    }
+}
+
+/// `(visible_region, is_on_screen)`: the element's region intersected
+/// with every enclosing clipper's own rect, and with the client area.
+/// `visible_region` is Some only when that differs from the raw region.
+fn visible_geometry(
+    tree: &RegionedTree<'_>,
+    parent: &[usize],
+    node: &RegionedNode<'_>,
+    client: crate::region::DisplayRegion,
+) -> (Option<crate::region::DisplayRegion>, bool) {
+    let raw = node.total_region;
+    let mut visible = raw;
+    let mut clipped = false;
+    let mut index = node.index;
+    while index != 0 {
+        index = parent[index];
+        let ancestor = &tree.all_nodes()[index];
+        if !ancestor.region.is_empty() && is_ancestor_clipper(ancestor) {
+            match visible.intersect(&own_abs(ancestor)) {
+                Some(inter) => {
+                    visible = inter;
+                    clipped = true;
+                }
+                // Entirely outside an enclosing viewport/window frame:
+                // not rendered by the game at all.
+                None => return (None, false),
+            }
+        }
+    }
+    let on_screen = visible
+        .intersect(&client)
+        .is_some_and(|r| r.width > 0 && r.height > 0);
+    (clipped.then_some(visible).filter(|v| *v != raw), on_screen)
 }
 
 /// Serializable form of [`HitTarget`] for CLI/Python.

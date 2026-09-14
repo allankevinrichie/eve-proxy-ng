@@ -107,9 +107,14 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
     let station_window = station::extract_station_window(&regioned);
     let message_boxes = windows::extract_message_boxes(&regioned);
     let game_state = classify_game_state(&regioned, ship_ui.is_some(), station_window.is_some(), &message_boxes);
+    let client_size = (!regioned.root().region.is_empty()).then_some(ClientSize {
+        width: regioned.root().region.width,
+        height: regioned.root().region.height,
+    });
     let snapshot = UiSnapshot {
         flavor: profile.flavor.internal_tag().unwrap_or("unknown").to_string(),
         node_count: eve_memory::uitree::count_nodes(tree),
+        client_size,
         game_state,
         ship_ui,
         // Module tooltip while a module button is hovered (the
@@ -208,11 +213,20 @@ impl FlavorProfile {
     }
 }
 
+/// The game window's client area (UIRoot's own display size) — the
+/// coordinate space every region is expressed in.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct ClientSize {
+    pub width: i64,
+    pub height: i64,
+}
+
 /// Top-level semantic extraction result.
 #[derive(Clone, Debug, Serialize)]
 pub struct UiSnapshot {
     pub flavor: String,
     pub node_count: usize,
+    pub client_size: Option<ClientSize>,
     /// One glance: current screen and any game-wide input blocker.
     pub game_state: GameState,
     pub ship_ui: Option<ShipUi>,

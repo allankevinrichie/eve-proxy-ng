@@ -60,7 +60,7 @@ impl DisplayRegion {
         (self.x + self.width / 2, self.y + self.height / 2)
     }
 
-    fn intersect(&self, other: &DisplayRegion) -> Option<DisplayRegion> {
+    pub(crate) fn intersect(&self, other: &DisplayRegion) -> Option<DisplayRegion> {
         let x = self.x.max(other.x);
         let y = self.y.max(other.y);
         let right = self.right().min(other.right());
