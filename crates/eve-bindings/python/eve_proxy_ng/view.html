@@ -63,7 +63,8 @@ const icons = new Map();  // path -> {img, ok}
 const layers = { windows: true, overview: true, modules: true, menus: true, elements: true };
 
 const KIND_OF = {
-  window: "windows", tab: "windows", overview: "overview", item: "overview",
+  window: "windows", tab: "windows", charslot: "windows",
+  overview: "overview", item: "overview",
   module: "modules", menu: "menus", menuitem: "menus",
   hud: "modules", element: "elements", neocom: "elements",
 };
@@ -151,8 +152,8 @@ function draw() {
          cv.width / 2, 40, COLORS.red, '14px "Microsoft YaHei"', "center");
     return;
   }
-  const order = ["element", "neocom", "window", "tab", "item", "menuitem",
-                 "menu", "overview", "hud", "module"];
+  const order = ["element", "neocom", "charslot", "window", "tab",
+                 "item", "menuitem", "menu", "overview", "hud", "module"];
   for (const kind of order) {
     for (const n of nodes) {
       if (n.k !== kind || !layers[KIND_OF[kind]]) continue;
@@ -262,6 +263,23 @@ function drawNode(n) {
       }
       text(clipText(n.l || "", w - 6), x + w / 2, y + h / 2,
            selected ? "#d6f6ff" : COLORS.dim, null, "center");
+      break;
+    }
+    case "charslot": {
+      ctx.fillStyle = "#0e151e";
+      ctx.fillRect(x, y, w, h);
+      const occl = ((n.d || {}).occluded_percent) || 0;
+      ctx.strokeStyle = occl > 0 ? COLORS.red + "66" : COLORS.cyan + "55";
+      ctx.lineWidth = occl > 0 ? 1 : 2;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      text(clipText(n.l || "(未知名)", w - 16), x + 10, y + 22,
+           "#eaf7ff", 'bold 16px "Microsoft YaHei"');
+      if (n.s) {
+        text(clipText(n.s, w - 16), x + 10, y + 42, COLORS.dim,
+             '11px "Microsoft YaHei"');
+      }
+      text("角色", x + w - 8, y + 14, COLORS.cyan + "88",
+           '10px "Microsoft YaHei"', "right");
       break;
     }
     case "neocom": {

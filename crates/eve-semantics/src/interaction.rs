@@ -263,7 +263,14 @@ pub fn interaction_info_with_order(
     for probe in probe_points(&region) {
         probes += 1;
         match hit_test(tree, probe.0, probe.1, layer_order) {
+            // The probe reaches the node's subtree — not occluded.
             Some(hit) if subtree_contains(tree, node, hit.node) => {}
+            // Routing stopped on an ANCESTOR of the node (a pick-routing
+            // container above it): the probe still lands inside the
+            // node's own visual area, so this is coverage by the node's
+            // own chain, not by a foreign node in front. Ancestors are
+            // never occluders.
+            Some(hit) if subtree_contains(tree, hit.node, node) => {}
             Some(hit) => {
                 occluded_probes += 1;
                 let winner = OccluderRef::from(hit.node);

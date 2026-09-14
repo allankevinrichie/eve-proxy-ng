@@ -19,6 +19,7 @@
 //!           UiSnapshot (serde → JSON / Python)
 //! ```
 
+pub mod character_select;
 pub mod fitting;
 pub mod icons;
 pub mod interaction;
@@ -125,6 +126,7 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         chat_window_stacks: windows::extract_chat_window_stacks(&regioned),
         fitting_window: fitting::extract_fitting_window(&regioned),
         station_window,
+        character_select: character_select::extract_character_select(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
         other_windows: windows::extract_generic_windows(&regioned),
@@ -229,6 +231,9 @@ pub struct UiSnapshot {
     pub fitting_window: Option<FittingWindow>,
     /// Station services panel when docked.
     pub station_window: Option<StationWindow>,
+    /// Login character-select screen when present (slots with names
+    /// and status lines).
+    pub character_select: Option<character_select::CharacterSelect>,
     /// Every scrollable list with visibility and scroll predictions.
     pub scrollable_views: Vec<ScrollView>,
     pub layers: Vec<LayerSummary>,

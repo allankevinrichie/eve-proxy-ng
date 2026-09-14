@@ -125,6 +125,19 @@ def build_scene(snap: dict) -> dict:
                    detail={"name": name, "hint": button.get("hint")},
                    interaction=button))
 
+    # --- character-select slots (login screen cards) ---
+    for slot in ((snap.get("character_select") or {}).get("slots") or []):
+        take(_node("charslot", slot.get("region"),
+                   label=slot.get("name"),
+                   sub=" / ".join((slot.get("details") or [])[:2]) or None,
+                   cls=_interactable(slot),
+                   interaction=slot,
+                   detail={
+                       "index": slot.get("index"),
+                       "details": slot.get("details"),
+                       "occluded_percent": slot.get("occluded_percent"),
+                   }))
+
     # --- windows (frame + caption) ---
     for key, title in (
         ("overview_windows", None),
@@ -231,8 +244,8 @@ def build_scene(snap: dict) -> dict:
             cls = _PASSIVE
         hint = element.get("hint")
         label = (element.get("text") or element.get("role")
-                 or element.get("name")
-                 or (hint[:16] if hint else None))
+                 or (hint[:16] if hint else None)
+                 or element.get("name"))
         take(_node("element", region,
                    interaction=element,
                    label=(label[:48] + "…") if label and len(label) > 48 else label,
