@@ -476,7 +476,7 @@ def _elements_grouped(snap: dict, claimed: set | None = None) -> list:
 
 
 def _claimed_under_window(rows: list, window: dict) -> list:
-    """认领元素行中，中心落在该窗口矩形内的那些。"""
+    """认领元素行中，中心落在该窗口矩形内的那些（同矩形叠加已合并）。"""
     rect = window.get("region") or {}
     x0, y0 = rect.get("x", 0), rect.get("y", 0)
     x1 = x0 + rect.get("width", 0)
@@ -490,6 +490,62 @@ def _claimed_under_window(rows: list, window: dict) -> list:
         if x0 <= cx <= x1 and y0 <= cy <= y1:
             out.append(row)
     return out
+
+
+def _window_control_tree(snap: dict, claimed_rows: list, window: dict) -> list:
+    """窗口内控件按 element_tree 容器层级组织（不平铺）。
+
+    只保留包含认领元素的容器分支；单子透传层坍缩；不在 element_tree
+    里的认领元素（未分组）按同矩形合并后附加。"""
+    rect = window.get("region") or {}
+    x0, y0 = rect.get("x", 0), rect.get("y", 0)
+    x1 = x0 + rect.get("width", 0)
+    y1 = y0 + rect.get("height", 0)
+
+    def in_window(r):
+        if not r:
+            return False
+        cx, cy = r[0] + r[2] // 2, r[1] + r[3] // 2
+        return x0 <= cx <= x1 and y0 <= cy <= y1
+
+    row_by_addr = {row.get("a"): row for row in claimed_rows if row.get("a")}
+
+    def convert(node: dict):
+        leaves = [row_by_addr[a] for a in (node.get("elements") or [])
+                  if a in row_by_addr]
+        kids = [kid for kid in (convert(c) for c in (node.get("children") or []))
+                if kid is not None]
+        if not leaves and not kids:
+            return None
+        # 透传容器坍缩
+        if len(kids) == 1 and not leaves:
+            return kids[0]
+        sub = []
+        if leaves:
+            sub.append(f"{len(leaves)} 控件")
+        if kids:
+            sub.append(f"{len(kids)} 组")
+        return _titem(node.get("name") or node.get("type_name") or "?",
+                      sub=" / ".join(sub) or None,
+                      address=node.get("address") or None,
+                      rect=node.get("region"),
+                      children=kids + leaves)
+
+    branches = [b for b in (convert(n) for n in (snap.get("element_tree") or []))
+                if b is not None]
+    # 认领但不在 element_tree 的（未分组节点）补充
+    grouped = set()
+    def collect(node):
+        if not node.get("c"):
+            if node.get("a"):
+                grouped.add(node["a"])
+        else:
+            for k in node.get("c"):
+                collect(k)
+    for b in branches:
+        collect(b)
+    leftovers = [row for addr, row in row_by_addr.items() if addr not in grouped]
+    return branches + leftovers
 
 
 def _window_sections(snap: dict, children: list, by_section: dict | None = None) -> None:
@@ -537,6 +593,7 @@ def _window_sections(snap: dict, children: list, by_section: dict | None = None)
                 label = "消息"
             claimed = _claimed_under_window(
                 by_section.get(name, []), window)
+            control_tree = _window_control_tree(snap, claimed, window) if claimed else []
             sub = f"{len(items)} 项"
             if key == "inventory_windows" and window.get("capacity_gauge_text"):
                 sub = f"{window['capacity_gauge_text']} · {sub}"
@@ -544,7 +601,7 @@ def _window_sections(snap: dict, children: list, by_section: dict | None = None)
                 sub += f" · {len(claimed)} 控件"
             window_children.append(_titem(label, sub=sub,
                                           rect=window.get("region"), path=[key, i],
-                                          children=items + claimed))
+                                          children=items + control_tree))
         children.append(_titem(f"{name} ({len(windows)})", children=window_children))
 
 

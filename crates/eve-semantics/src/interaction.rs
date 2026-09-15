@@ -423,13 +423,34 @@ pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionE
             parent[child.index] = node.index;
         }
     }
-    let candidates: Vec<&crate::region::RegionedNode<'_>> = tree
+    let mut candidates: Vec<&crate::region::RegionedNode<'_>> = tree
         .all_regioned()
         .filter(|node| node.depth >= 1)
         .filter(|node| node.pick_state() == Some(PICK_STATE_TAKES))
         .filter(|node| node.total_region.area() * 2 < root_area)
         .take(MAX_INTERACTION_ELEMENTS)
         .collect();
+    // Drop INTERNAL COMPOSITION: a pick-taking descendant whose region
+    // is IDENTICAL to a pick-taking strict ancestor is a rendering part
+    // of the outer control (dragArea+ResizeHandle, Container+Icon,
+    // gauge+DonutSegment) — the ancestor IS the element. Sibling stacks
+    // at the same rect (brackets of co-located objects) are NOT nested
+    // and stay, as they are genuinely distinct entities.
+    let mut is_candidate = vec![false; tree.all_nodes().len()];
+    for node in &candidates {
+        is_candidate[node.index] = true;
+    }
+    candidates.retain(|node| {
+        let mut index = node.index;
+        while index != 0 {
+            index = parent[index];
+            let ancestor = &tree.all_nodes()[index];
+            if is_candidate[ancestor.index] && ancestor.total_region == node.total_region {
+                return false;
+            }
+        }
+        true
+    });
     candidates
         .into_par_iter()
         .map(|node| {
