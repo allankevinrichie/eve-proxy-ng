@@ -99,7 +99,29 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
     let regioned_us = regioned_start.elapsed().as_micros() as u64;
 
     let interaction_start = std::time::Instant::now();
-    let interaction_elements = interaction::extract_interaction_elements(&regioned);
+    let mut interaction_elements = interaction::extract_interaction_elements(&regioned);
+    let mut other_windows = windows::extract_generic_windows(&regioned);
+    // Window membership: every interaction element joins its enclosing
+    // top-level generic window (smallest containing rect, center test) —
+    // the container grouping agents use to tell what belongs together.
+    for element in &mut interaction_elements {
+        let (cx, cy) = element.region.center();
+        let mut best: Option<usize> = None;
+        let mut best_area = i64::MAX;
+        for (index, window) in other_windows.iter().enumerate() {
+            if window.region.contains_point(cx, cy) {
+                let area = window.region.area();
+                if area < best_area {
+                    best_area = area;
+                    best = Some(index);
+                }
+            }
+        }
+        if let Some(index) = best {
+            other_windows[index].element_addresses.push(element.address.clone());
+            element.window_address = Some(other_windows[index].address.clone());
+        }
+    }
     let interaction_us = interaction_start.elapsed().as_micros() as u64;
 
     let extractors_start = std::time::Instant::now();
@@ -134,7 +156,7 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         character_select: character_select::extract_character_select(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
-        other_windows: windows::extract_generic_windows(&regioned),
+        other_windows,
         interaction_elements,
     };
     let extractors_us = extractors_start.elapsed().as_micros() as u64;

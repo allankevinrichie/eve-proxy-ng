@@ -329,6 +329,11 @@ pub struct InteractionElement {
     /// Decimal node address — the stable identity used for frame-to-frame
     /// keyed diffs in the recorder.
     pub address: String,
+    /// Address of the enclosing top-level window (`other_windows[].address`)
+    /// — the container this element visually belongs to. None for HUD /
+    /// layer-level elements outside any window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Semantic role from the curated table (`hud.open_cargo`,
@@ -436,6 +441,7 @@ pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionE
             InteractionElement {
                 type_name: node.type_name().to_string(),
                 address: node.node.address.0.to_string(),
+                window_address: None,
                 name: node.name().map(str::to_string),
                 role,
                 label,

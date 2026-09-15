@@ -220,6 +220,7 @@ mod tests {
         InteractionElement {
             type_name: "Button".into(),
             address: address.to_string(),
+            window_address: None,
             name: None,
             role: None,
             label: None,

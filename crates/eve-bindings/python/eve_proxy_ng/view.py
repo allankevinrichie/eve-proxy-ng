@@ -125,6 +125,26 @@ def build_scene(snap: dict) -> dict:
                    detail={"name": name, "hint": button.get("hint")},
                    interaction=button))
 
+    # --- generic windows (popups/gacha/activities…): frames with
+    # captions; skip ones already framed by a specialized window ---
+    for window in snap.get("other_windows") or []:
+        region = window.get("region") or {}
+        key = (region.get("x"), region.get("y"), region.get("width"), region.get("height"))
+        if key in taken or region.get("width", 0) < 120:
+            continue
+        caption = (window.get("caption")
+                   or (window.get("type_name") or "").removesuffix("Wnd").removesuffix("Window"))
+        take(_node("window", region,
+                   label=caption,
+                   cls=_INTERACTABLE if window.get("is_interactable", True) else _PASSIVE,
+                   interaction=window,
+                   detail={
+                       "kind": "other_window",
+                       "type_name": window.get("type_name"),
+                       "name": window.get("name"),
+                       "elements": len(window.get("element_addresses") or []),
+                   }))
+
     # --- character-select slots (login screen cards) ---
     for slot in ((snap.get("character_select") or {}).get("slots") or []):
         take(_node("charslot", slot.get("region"),
@@ -228,6 +248,11 @@ def build_scene(snap: dict) -> dict:
             "indication": ship.get("indication"),
         }))
 
+    window_names = {
+        w.get("address"): (w.get("caption") or w.get("type_name") or "?")
+        for w in snap.get("other_windows") or []
+    }
+
     # --- generic interaction elements (dedup against special nodes) ---
     for element in elements:
         region = element.get("region") or {}
@@ -258,6 +283,7 @@ def build_scene(snap: dict) -> dict:
                        "icon": element.get("icon"),
                        "occluded_percent": info.get("occluded_percent"),
                        "is_on_screen": element.get("is_on_screen", True),
+                       "window": window_names.get(element.get("window_address")),
                    })
         vr = element.get("visible_region")
         if vr and (vr.get("x"), vr.get("y"), vr.get("width"), vr.get("height")) != (

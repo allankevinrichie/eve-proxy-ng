@@ -123,6 +123,12 @@ client.restore_window()
 - [资源与图标识别](resources.md)——名字与图标的解析策略
 - [Python API](../api.md)——全部接口细节
 
+### 窗口容器与元素归属
+
+- `other_windows[]`：全部顶层窗口容器（特化窗口之外的安全网 + 弹窗类：每日登录/抽卡/活动等 `Wnd/Window` 命名容器），带 `address`/`caption`/`element_addresses`
+- 每个 `interaction_element` 带 `window_address`（所属窗口地址，HUD/游离元素为 None）——双向 join，一眼知道这个按钮属于哪个窗口
+- 特化窗口（总览/库存/装配/站内/聊天）的子项直接是其结构化字段
+
 ### 元素的"如实"几何字段
 
 - `client_size`（快照顶层）：游戏客户区尺寸，所有 region 的坐标系

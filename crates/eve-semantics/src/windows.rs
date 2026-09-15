@@ -38,6 +38,13 @@ pub struct GenericWindow {
     #[serde(flatten)]
     pub interaction: InteractionInfo,
     pub type_name: String,
+    /// Decimal node address — joins with
+    /// `InteractionElement.window_address`.
+    pub address: String,
+    pub name: Option<String>,
+    /// Addresses of the interaction elements inside this window
+    /// (filled by the snapshot assembly, rect-membership join).
+    pub element_addresses: Vec<String>,
     pub caption: Option<String>,
     /// Contained text nodes, top-left first, capped for very dense windows
     /// (`truncated_texts` reports the remainder).
@@ -162,12 +169,21 @@ pub fn extract_generic_windows(tree: &RegionedTree<'_>) -> Vec<GenericWindow> {
         .all_regioned()
         .filter(|node| node.depth >= 2)
         .filter(|node| {
-            !SPECIALIZED_WINDOW_TYPES.contains(&node.type_name())
-                && !NON_WINDOW_TYPES.contains(&node.type_name())
-                && !node.type_name().starts_with("Button")
-                && tree
-                    .children_of(node)
-                    .any(|child| child.name() == Some("content"))
+            let t = node.type_name();
+            !SPECIALIZED_WINDOW_TYPES.contains(&t)
+                && !NON_WINDOW_TYPES.contains(&t)
+                && !t.starts_with("Button")
+                && (tree.children_of(node).any(|child| child.name() == Some("content"))
+                    // Modal/popup windows (daily rewards, gacha, activities…)
+                    // are named Wnd/Window but carry no `content` child.
+                    // Window chrome PARTS (underlay/header/…) are not
+                    // windows — they'd steal membership from the frame.
+                    || ((t.contains("Wnd") || t.contains("Window"))
+                        && node.total_region.area() >= 40_000
+                        && !t.contains("Underlay") && !t.contains("Header")
+                        && !t.contains("Caption") && !t.contains("Frame")
+                        && !t.contains("Backdrop") && !t.contains("Border")
+                        && !t.contains("Resize") && !t.contains("Button")))
         })
         .map(|window| {
             let texts: Vec<String> = tree
@@ -180,6 +196,9 @@ pub fn extract_generic_windows(tree: &RegionedTree<'_>) -> Vec<GenericWindow> {
                 region: window.total_region,
                 interaction: interaction_info(tree, window),
                 type_name: window.type_name().to_string(),
+                address: window.node.address.0.to_string(),
+                name: window.name().map(str::to_string),
+                element_addresses: Vec::new(),
                 caption: caption_of(tree, window),
                 texts: texts.into_iter().take(GENERIC_WINDOW_TEXT_CAP).collect(),
                 truncated_texts: truncated,
@@ -202,6 +221,17 @@ fn caption_of(tree: &RegionedTree<'_>, window: &RegionedNode<'_>) -> Option<Stri
     tree.descendants(window)
         .find(|node| node.type_name() == "TextHeadline")
         .and_then(|node| node.text())
+        .or_else(|| {
+            // Popup headers carry their title in the first label under
+            // DefaultWindowHeader.
+            tree.descendants(window)
+                .find(|node| node.type_name() == "DefaultWindowHeader")
+                .and_then(|header| {
+                    tree.descendants(header)
+                        .filter_map(|node| node.text())
+                        .find(|text| !text.is_empty())
+                })
+        })
 }
 
 /// MessageBox nodes plus HybridWindows inside modal layers.
