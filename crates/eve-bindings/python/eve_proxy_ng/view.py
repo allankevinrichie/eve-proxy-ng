@@ -528,6 +528,19 @@ def build_tree(snap: dict) -> list:
 
     _window_sections(snap, children)
 
+    stacks = snap.get("chat_window_stacks") or []
+    if stacks:
+        children.append(_titem(f"聊天窗口栈 ({len(stacks)})", children=[
+            _titem(" / ".join(filter(None, [w.get("caption") for w in (s.get("windows") or [])[:3]])) or "栈",
+                   sub=f"{len(s.get('windows') or [])} 个标签页",
+                   rect=s.get("region"), path=["chat_window_stacks", i],
+                   children=[
+                       _titem(w.get("caption") or "?",
+                              sub=f"{len(w.get('users') or [])} 人" if w.get("users") else None,
+                              path=["chat_window_stacks", i, "windows", j])
+                       for j, w in enumerate(s.get("windows") or [])])
+            for i, s in enumerate(stacks)]))
+
     others = snap.get("other_windows") or []
     if others:
         children.append(_titem(f"其他窗口 ({len(others)})", children=[
@@ -543,7 +556,7 @@ def build_tree(snap: dict) -> list:
                                children=_elements_grouped(snap)))
 
     counts = [(k, len(snap.get(k) or [])) for k in
-              ("neocom", "chat_window_stacks", "scrollable_views", "layers",
+              ("neocom", "scrollable_views", "layers",
                "fitting_window", "station_window", "info_panels",
                "selected_item_window")]
     summary = " / ".join(f"{k} {c}" for k, c in counts if c) or "无"

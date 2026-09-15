@@ -165,9 +165,29 @@ const NON_WINDOW_TYPES: &[&str] = &[
 /// whose type names claim them. Order: topmost first (last child of a
 /// layer draws on top).
 pub fn extract_generic_windows(tree: &RegionedTree<'_>) -> Vec<GenericWindow> {
+    // Windows inside a specialized window container (e.g. a chat tab's
+    // XmppChatWindow inside ChatWindowStack) belong to that container —
+    // the specialized extractor already models them; do not duplicate.
+    let mut parent = vec![0usize; tree.all_nodes().len()];
+    for node in tree.all_nodes() {
+        for child in tree.children_of(node) {
+            parent[child.index] = node.index;
+        }
+    }
+    let under_specialized = |start: usize| -> bool {
+        let mut index = start;
+        while index != 0 {
+            index = parent[index];
+            if SPECIALIZED_WINDOW_TYPES.contains(&tree.all_nodes()[index].type_name()) {
+                return true;
+            }
+        }
+        false
+    };
     let mut windows: Vec<GenericWindow> = tree
         .all_regioned()
         .filter(|node| node.depth >= 2)
+        .filter(|node| !under_specialized(node.index))
         .filter(|node| {
             let t = node.type_name();
             !SPECIALIZED_WINDOW_TYPES.contains(&t)
