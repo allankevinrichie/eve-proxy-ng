@@ -239,6 +239,12 @@ def build_scene(snap: dict) -> dict:
                 cls = _INTERACTABLE
                 if button.get("is_active"):
                     cls = _BLOCKED  # 前端用金色高亮 active，这里只透传状态
+                ov = button.get("overload")
+                if ov:
+                    take(_node("ovarc", ov.get("region"),
+                               sub=f"超载:{ov.get('state')}",
+                               cls=_INTERACTABLE if ov.get("state") != "disabled" else _PASSIVE,
+                               detail={"kind": "overload_arc", "state": ov.get("state")}))
                 take(_node("module", button.get("region"),
                            label=button.get("module_name"),
                            sub=rack,
@@ -600,6 +606,7 @@ def build_tree(snap: dict) -> list:
                 _titem(b.get("module_name") or b.get("icon_name") or "?",
                        sub=" / ".join(filter(None, [
                            f"typeID {b['type_id']}" if b.get("type_id") else None,
+                           f"超载:{b['overload']['state']}" if b.get("overload") else None,
                            "激活" if b.get("is_active") else None,
                            "忙碌" if b.get("is_busy") else None])),
                        rect=b.get("region"), path=["ship_ui", key, i])

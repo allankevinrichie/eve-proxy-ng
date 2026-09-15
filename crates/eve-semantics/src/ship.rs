@@ -26,6 +26,10 @@ pub struct ModuleButton {
     /// alongside the exact name since meta variants share it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon_name: Option<String>,
+    /// The per-module overload arc above the button (click target +
+    /// state), when the slot carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overload: Option<ModuleOverload>,
     /// Module display name: exact typeID lookup (localized, precise
     /// variant) → icon family fallback.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,6 +94,36 @@ pub struct ShipUi {
     pub hud_buttons: Vec<HudButton>,
 }
 
+/// Per-module overload control: the thin arc ABOVE the module button
+/// (inside the round slot). Clicking the arc toggles overload; the arc
+/// texture carries the state.
+#[derive(Clone, Debug, Serialize)]
+pub struct ModuleOverload {
+    /// The arc's own click rectangle (absolute game coords).
+    pub region: DisplayRegion,
+    /// `disabled` (module cannot overheat), `off` (ready), `on`
+    /// (overloading), or `blink` (overheating/damage states).
+    pub state: String,
+    /// The arc texture path (raw ground truth).
+    pub texture: String,
+}
+
+fn overload_state(texture: &str) -> &'static str {
+    let lowered = texture.to_ascii_lowercase();
+    if lowered.contains("disabled") {
+        "disabled"
+    } else if lowered.contains("blink") {
+        "blink"
+    } else if lowered.contains("on") && !lowered.contains("off") {
+        // slotOverloadOn.png — careful: "off" checked first below.
+        "on"
+    } else if lowered.contains("off") {
+        "off"
+    } else {
+        "off"
+    }
+}
+
 /// One HUD control outside the module racks.
 #[derive(Clone, Debug, Serialize)]
 pub struct HudButton {
@@ -145,6 +179,15 @@ fn hud_kind(node: &RegionedNode<'_>) -> Option<&'static str> {
     })
 }
 
+/// Does a `busy` sprite exist under the node? For the camera radio
+/// group only the active mode's button has one; toggles (autopilot,
+/// tactical view) also light it while on.
+fn busy_present(tree: &RegionedTree<'_>, node: &RegionedNode<'_>) -> bool {
+    tree.subtree_iter(node.index)
+        .skip(1)
+        .any(|child| child.type_name() == "Sprite" && child.name() == Some("busy"))
+}
+
 fn extract_hud_buttons(
     tree: &RegionedTree<'_>,
     ship_node: &RegionedNode<'_>,
@@ -168,10 +211,22 @@ fn extract_hud_buttons(
                 "CheckboxWithTooltip" => node.boolean("_checked"),
                 // Toggle buttons flip their hint when on: 关闭自动导航 /
                 // 隐藏战术视图 mean the feature is currently ON.
-                "LeftSideButtonAutopilot" | "LeftSideButtonTactical" => hint
-                    .as_deref()
-                    .map(|h| h.starts_with("关闭") || h.starts_with("隐藏"))
-                    .or(Some(false)),
+                "LeftSideButtonAutopilot" | "LeftSideButtonTactical" => {
+                    let flipped = hint
+                        .as_deref()
+                        .map(|h| h.starts_with("关闭") || h.starts_with("隐藏"))
+                        .unwrap_or(false);
+                    Some(flipped || busy_present(tree, node))
+                }
+                // Camera modes are a radio group: the ACTIVE mode's
+                // button carries a busy sprite child, the inactive ones
+                // have none (verified: orbit on → busy present, the
+                // other two absent).
+                "LeftSideButtonCameraTactical"
+                | "LeftSideButtonCameraOrbit"
+                | "LeftSideButtonCameraPOV" => Some(busy_present(tree, node)),
+                // cargo/mining/scanner: idle buttons also carry a
+                // dim busy sprite — no calibrated on/off signal yet.
                 _ => None,
             };
             let icon = crate::icons::element_icon(tree, node);
@@ -355,6 +410,25 @@ fn module_button(
         .as_deref()
         .and_then(crate::icons::module_name_from_icon)
         .map(str::to_string);
+    // The overload arc: the ShipSlot's overloadBtn sprite sibling.
+    let overload = tree
+        .children_of(slot)
+        .find(|child| child.name() == Some("overloadBtn"))
+        .and_then(|arc| {
+            let entries = arc.entries();
+            let texture = entries
+                .get("_texturePath")
+                .or_else(|| entries.get("texturePath"))
+                .and_then(|value| match value {
+                    eve_memory::NodeValue::Str(path) => Some(path.clone()),
+                    _ => None,
+                })?;
+            Some(ModuleOverload {
+                region: arc.total_region,
+                state: overload_state(&texture).to_string(),
+                texture,
+            })
+        });
     // Name priority: exact typeID lookup (localized, precise variant)
     // → icon family fallback (incl. live-verified overrides).
     let module_name = type_id
@@ -368,6 +442,7 @@ fn module_button(
         module_name,
         icon,
         icon_name,
+        overload,
         is_active: button.boolean("ramp_active"),
         is_busy: sprite_named("busy"),
         is_hilite: sprite_named("hilite"),

@@ -106,7 +106,7 @@ const layers = { windows: true, overview: true, modules: true, menus: true, elem
 const KIND_OF = {
   window: "windows", tab: "windows", charslot: "windows",
   overview: "overview", item: "overview",
-  module: "modules", hudbtn: "modules", menu: "menus", menuitem: "menus",
+  module: "modules", hudbtn: "modules", ovarc: "modules", menu: "menus", menuitem: "menus",
   hud: "modules", element: "elements", neocom: "elements",
 };
 const COLORS = {
@@ -301,6 +301,19 @@ function drawNode(n) {
              COLORS.dim, null, "center");
       }
       if (d.is_active) { ctx.fillStyle = COLORS.green; ctx.fillRect(x + 2, y + 2, 4, 4); }
+      break;
+    }
+    case "ovarc": {
+      // The thin overload arc above a module button; color = state.
+      const st = ((n.d || {}).state) || "off";
+      ctx.fillStyle = st === "on" ? COLORS.red
+                    : st === "blink" ? COLORS.gold
+                    : st === "disabled" ? "#2a3442" : COLORS.green;
+      ctx.fillRect(x, y, w, Math.max(2, Math.min(4, h)));
+      if (st !== "disabled") {
+        ctx.strokeStyle = ctx.fillStyle + "66";
+        ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      }
       break;
     }
     case "hudbtn": {
