@@ -145,6 +145,16 @@ pub struct HudButton {
     /// flipped hint 关闭/隐藏 prefix means ON).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_on: Option<bool>,
+    /// Gauge-style buttons: RAW fill-strip height in px (cargo button:
+    /// the busyContainer strip grows with bay occupancy; empty bay
+    /// reads a 3px baseline).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_strip_px: Option<i64>,
+    /// Derived fill percent (cargo button). Calibration: empty=3px,
+    /// 4% (5/125 m³)=4px → strip = 3 + trunc(frac·45); resolution
+    /// therefore ±~2%. Refine the FULL constant with a mid-fill sample.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_percent: Option<i64>,
 }
 
 /// Node → semantic kind mapping for HUD controls (type-name or
@@ -233,6 +243,24 @@ fn extract_hud_buttons(
             let icon_name = icon
                 .as_deref()
                 .and_then(crate::icons::semantic_icon_name);
+            // The cargo button doubles as an occupancy gauge: its
+            // busyContainer strip (a cropped glow sprite) grows with
+            // the bay's fill level. Report the RAW strip height — the
+            // empty bay baseline is 3px, so percent needs calibration.
+            let (fill_strip_px, fill_percent) = if node.type_name() == "LeftSideButtonCargo" {
+                tree.children_of(node)
+                    .find(|child| child.name() == Some("busyContainer"))
+                    .map(|strip| {
+                        const EMPTY_BASE: i64 = 3; // measured: empty bay
+                        const FULL_SPAN: i64 = 45; // measured span guess (48px icon), ±2%
+                        let px = strip.region.height;
+                        let percent = ((px - EMPTY_BASE).max(0) * 100 / FULL_SPAN).min(100);
+                        (Some(px), Some(percent))
+                    })
+                    .unwrap_or((None, None))
+            } else {
+                (None, None)
+            };
             buttons.push(HudButton {
                 kind: kind.to_string(),
                 region: node.total_region,
@@ -241,6 +269,8 @@ fn extract_hud_buttons(
                 icon,
                 icon_name,
                 is_on,
+                fill_strip_px,
+                fill_percent,
             });
         }
     }
@@ -266,6 +296,8 @@ fn extract_hud_buttons(
                 icon,
                 icon_name,
                 is_on: None,
+                fill_strip_px: None,
+                fill_percent: None,
             });
         }
     }
