@@ -19,7 +19,7 @@ eve-semantics = { path = "crates/eve-semantics" }
 eve-recorder = { path = "crates/eve-recorder" }
 rustc-hash = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 rayon = "1.10"
 tracing = "0.1"

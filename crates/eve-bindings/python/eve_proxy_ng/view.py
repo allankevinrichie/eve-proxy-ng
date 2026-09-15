@@ -377,8 +377,6 @@ def _fmt_distance(meters) -> str | None:
 
 def _titem(label, sub=None, address=None, rect=None, path=None, children=None, off=False):
     item = {"l": label}
-    if off:
-        item["off"] = True
     if sub:
         item["s"] = sub
     if address:
@@ -391,10 +389,30 @@ def _titem(label, sub=None, address=None, rect=None, path=None, children=None, o
         item["p"] = path
     if children is not None:
         item["c"] = children
+    if off:
+        item["off"] = True
     return item
 
 
-def _element_row(element, index):
+def _preview(value) -> str | None:
+    """标量/小字典的诚实预览（点击行可看原始 JSON）。"""
+    if value is None or isinstance(value, (bool, int, float)):
+        text = json.dumps(value, ensure_ascii=False)
+        return text[:40]
+    if isinstance(value, str):
+        return value[:40] or None
+    if isinstance(value, list):
+        return f"[{len(value)}]"
+    if isinstance(value, dict):
+        return "{...}"
+    return None
+
+
+_ELEMENT_FLAGS = ("is_enabled", "is_click_reachable", "is_on_screen")
+
+
+def _element_row(element: dict, path: list) -> dict:
+    """interaction_elements 成员行——字段全部来自元素自身（忠实）。"""
     flags = []
     if element.get("is_enabled") is False:
         flags.append("禁用")
@@ -404,431 +422,64 @@ def _element_row(element, index):
         flags.append("遮挡")
     if element.get("is_on_screen") is False:
         flags.append("屏外")
+    sub = " / ".join(filter(None, [
+        element.get("role"), element.get("icon_name"), *flags])) or None
     return _titem(
-        element.get("label") or element.get("type_name"),
-        sub=" / ".join(filter(None, [
-            element.get("role"), element.get("icon_name"), *flags])),
-        address=element.get("address"), rect=element.get("region"),
-        path=["interaction_elements", index],
-        off=element.get("is_enabled") is False)
+        element.get("label") or element.get("type_name") or "?",
+        sub=sub, address=element.get("address"), rect=element.get("region"),
+        path=path, off=element.get("is_enabled") is False)
 
 
-def _container_label(node: dict) -> str:
-    name = node.get("name") or ""
-    label = name or (node.get("type_name") or "?")
-    return label
+def _render(key: str, value, path: list, depth: int) -> dict:
+    """通用递归渲染：树 = 快照本体的结构镜像。
 
-def _tree_branches(snap: dict, claimed: set | None = None) -> list:
-    """element_tree（快照的语义容器层级）→ 树条目；叶子为元素行。
-
-    claimed 中的元素地址已归特化窗口区段，此处剪除；剪空后只剩
-    透传壳的容器一并丢弃。"""
-    elements = snap.get("interaction_elements") or []
-    by_address = {e.get("address"): (e, i) for i, e in enumerate(elements)}
-    claimed = claimed or set()
-
-    def convert(node: dict) -> dict | None:
-        leaves = [_element_row(e, i)
-                  for address in (node.get("elements") or [])
-                  if address not in claimed
-                  if (pair := by_address.get(address))
-                  for e, i in [pair]]
-        kids = [kid for kid in (convert(child) for child in (node.get("children") or []))
-                if kid is not None]
-        if not leaves and not kids:
-            return None
-        sub = []
-        if leaves:
-            sub.append(f"{len(leaves)} 元素")
-        if kids:
-            sub.append(f"{len(kids)} 子容器")
-        return _titem(_container_label(node),
-                      sub=" / ".join(sub) or None,
-                      address=node.get("address") or None,
-                      rect=node.get("region"),
-                      children=kids + leaves)
-
-    return [branch for branch in (convert(node) for node in (snap.get("element_tree") or []))
-            if branch is not None]
-
-def _elements_grouped(snap: dict, claimed: set | None = None) -> list:
-    """优先使用快照的 element_tree 通用容器层级；无则回退窗口分组。"""
-    if snap.get("element_tree"):
-        return _tree_branches(snap, claimed=claimed)
-    windows = {w.get("address"): w for w in snap.get("other_windows") or []}
-    groups: dict = {}
-    order: list = []
-    for index, element in enumerate(snap.get("interaction_elements") or []):
-        key = element.get("window_address")
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append((element, index))
-    children = []
-    for key in order:
-        members = groups[key]
-        window = windows.get(key)
-        label = (window.get("caption") or window.get("type_name")) if window else "无所属窗口（HUD/游离）"
-        children.append(_titem(
-            label, sub=f"{len(members)} 个元素", address=key,
-            children=[_element_row(element, index) for element, index in members]))
-    return children
-
-
-def _claimed_under_window(rows: list, window: dict) -> list:
-    """认领元素行中，中心落在该窗口矩形内的那些（同矩形叠加已合并）。"""
-    rect = window.get("region") or {}
-    x0, y0 = rect.get("x", 0), rect.get("y", 0)
-    x1 = x0 + rect.get("width", 0)
-    y1 = y0 + rect.get("height", 0)
-    out = []
-    for row in rows:
-        r = row.get("r")
-        if not r:
-            continue
-        cx, cy = r[0] + r[2] // 2, r[1] + r[3] // 2
-        if x0 <= cx <= x1 and y0 <= cy <= y1:
-            out.append(row)
-    return out
-
-
-def _window_control_tree(snap: dict, claimed_rows: list, window: dict) -> list:
-    """窗口内控件按 element_tree 容器层级组织（不平铺）。
-
-    只保留包含认领元素的容器分支；单子透传层坍缩；不在 element_tree
-    里的认领元素（未分组）按同矩形合并后附加。"""
-    rect = window.get("region") or {}
-    x0, y0 = rect.get("x", 0), rect.get("y", 0)
-    x1 = x0 + rect.get("width", 0)
-    y1 = y0 + rect.get("height", 0)
-
-    def in_window(r):
-        if not r:
-            return False
-        cx, cy = r[0] + r[2] // 2, r[1] + r[3] // 2
-        return x0 <= cx <= x1 and y0 <= cy <= y1
-
-    row_by_addr = {row.get("a"): row for row in claimed_rows if row.get("a")}
-
-    def convert(node: dict):
-        leaves = [row_by_addr[a] for a in (node.get("elements") or [])
-                  if a in row_by_addr]
-        kids = [kid for kid in (convert(c) for c in (node.get("children") or []))
-                if kid is not None]
-        if not leaves and not kids:
-            return None
-        # 透传容器坍缩
-        if len(kids) == 1 and not leaves:
-            return kids[0]
-        sub = []
-        if leaves:
-            sub.append(f"{len(leaves)} 控件")
-        if kids:
-            sub.append(f"{len(kids)} 组")
-        return _titem(node.get("name") or node.get("type_name") or "?",
-                      sub=" / ".join(sub) or None,
-                      address=node.get("address") or None,
-                      rect=node.get("region"),
-                      children=kids + leaves)
-
-    branches = [b for b in (convert(n) for n in (snap.get("element_tree") or []))
-                if b is not None]
-    # 认领但不在 element_tree 的（未分组节点）补充
-    grouped = set()
-    def collect(node):
-        if not node.get("c"):
-            if node.get("a"):
-                grouped.add(node["a"])
-        else:
-            for k in node.get("c"):
-                collect(k)
-    for b in branches:
-        collect(b)
-    leftovers = [row for addr, row in row_by_addr.items() if addr not in grouped]
-    return branches + leftovers
-
-
-def _window_sections(snap: dict, children: list, by_section: dict | None = None) -> None:
-    """特化窗口区段（总览/库存/菜单/消息框）；认领元素挂到各自窗口下。"""
-    by_section = by_section or {}
-    specs = (
-        ("overview_windows", "总览窗口"),
-        ("inventory_windows", "库存窗口"),
-        ("context_menus", "右键菜单"),
-        ("util_menus", "工具菜单"),
-        ("message_boxes", "消息框"),
-    )
-    for key, name in specs:
-        windows = snap.get(key) or []
-        if not windows:
-            continue
-        window_children = []
-        for i, window in enumerate(windows):
-            if key == "overview_windows":
-                entries = window.get("entries") or []
-                items = [_titem(e.get("object_name") or "?",
-                                sub=" / ".join(filter(None, [
-                                    _fmt_distance(e.get("distance_meters")),
-                                    e.get("icon_name")])),
-                                rect=e.get("region"),
-                                path=[key, i, "entries", j])
-                         for j, e in enumerate(entries)]
-                label = window.get("caption") or "总览"
-            elif key == "inventory_windows":
-                entries = window.get("items") or []
-                items = [_titem(it.get("name") or "?",
-                                sub=f"×{it.get('quantity')}" if it.get("quantity") else None,
-                                rect=it.get("region"), path=[key, i, "items", j])
-                         for j, it in enumerate(entries)]
-                label = "库存"
-            elif key in ("context_menus", "util_menus"):
-                rows = window.get("entries") or window.get("checkboxes") or []
-                items = [_titem(row.get("text") or "?",
-                                sub="已勾选" if row.get("is_checked") else None,
-                                rect=row.get("region"), path=[key, i])
-                         for row in rows]
-                label = " / ".join(filter(None, [r.get("text") for r in rows[:2]])) or "菜单"
-            else:
-                items = [_titem((window.get("text") or "?")[:24], path=[key, i])]
-                label = "消息"
-            claimed = _claimed_under_window(
-                by_section.get(name, []), window)
-            control_tree = _window_control_tree(snap, claimed, window) if claimed else []
-            sub = f"{len(items)} 项"
-            if key == "inventory_windows" and window.get("capacity_gauge_text"):
-                sub = f"{window['capacity_gauge_text']} · {sub}"
-            if claimed:
-                sub += f" · {len(claimed)} 控件"
-            window_children.append(_titem(label, sub=sub,
-                                          rect=window.get("region"), path=[key, i],
-                                          children=items + control_tree))
-        children.append(_titem(f"{name} ({len(windows)})", children=window_children))
-
-
-
-
-def _ship_subtree_claims(snap: dict) -> set:
-    """ShipUI 子树内的元素地址（树成员判定，非几何——避免误收恰好在
-    HUD 圆区域的太空括号）。"""
-    addresses = set()
-
-    def collect(node):
-        for a in (node.get("elements") or []):
-            addresses.add(a)
-        for child in (node.get("children") or []):
-            collect(child)
-
-    # element_tree 的单链坍缩会融掉 ShipUI 本身（无直系元素+单容器
-    # 链），其子件直接上提——以 HUD 的实际根集合为锚。
-    SHIP_ROOTS = {"hudContainer", "matrixslotButtons", "MiningScanButtons"}
-
-    def find_roots(nodes):
-        for n in nodes:
-            if n.get("type_name") == "ShipUI" or n.get("name") in SHIP_ROOTS:
-                collect(n)
-            else:
-                find_roots(n.get("children") or [])
-
-    find_roots(snap.get("element_tree") or [])
-    return addresses
-
-
-def _specialized_claims(snap: dict) -> dict:
-    """address -> section title：被特化窗口区段认领的元素。
-
-    特化区段（总览/库存/站内/装配/聊天栈）是这些元素的组织归属，
-    element_tree 中不再重复出现。判定：元素中心落在特化窗口矩形内，
-    且其 window_address 指向的通用窗口不小于该矩形（浮在面板上的
-    弹窗元素仍归 element_tree 的弹窗分支）。
+    dict → 子键（serde 字段序）；list → 编号成员；标量 → 叶子（预览即
+    值，点击看原始 JSON）。interaction_elements 成员带地址/矩形联动。
     """
-    sections = []  # (rect, title)
-    for window in snap.get("overview_windows") or []:
-        sections.append((window.get("region") or {}, "总览窗口"))
-    for window in snap.get("inventory_windows") or []:
-        sections.append((window.get("region") or {}, "库存窗口"))
-    for key, title in (("station_window", "站内服务"), ("fitting_window", "装配")):
-        if isinstance(snap.get(key), dict):
-            sections.append((snap[key].get("region") or {}, title))
-    for stack in snap.get("chat_window_stacks") or []:
-        sections.append((stack.get("region") or {}, "聊天窗口栈"))
-    generic = {w.get("address"): (w.get("region") or {})
-               for w in snap.get("other_windows") or []}
+    if isinstance(value, dict):
+        if not value:
+            return _titem(key, sub="{}", path=path)
+        children = [_render(k, v, path + [k], depth + 1) for k, v in value.items()]
+        return _titem(key, sub=f"{len(value)} 字段", path=path, children=children)
+    if isinstance(value, list):
+        if not value:
+            return _titem(key, sub="[]", path=path)
+        rows = []
+        for i, item in enumerate(value):
+            item_path = path + [i]
+            if path and path[0] == "interaction_elements":
+                rows.append(_element_row(item, item_path))
+            elif isinstance(item, (dict, list)):
+                preview = None
+                if isinstance(item, dict):
+                    for candidate in ("label", "name", "caption", "text",
+                                      "type_name", "object_name", "module_name"):
+                        if item.get(candidate):
+                            preview = str(item[candidate])[:24]
+                            break
+                rows.append(_render(f"[{i}]", item, item_path, depth + 1)
+                            if not preview
+                            else _titem(f"[{i}] {preview}", sub=_preview(item),
+                                        rect=item.get("region") if isinstance(item, dict) else None,
+                                        path=item_path,
+                                        children=None if isinstance(item, list) else
+                                        [_render(k, v, item_path + [k], depth + 2)
+                                         for k, v in item.items()]
+                                        if isinstance(item, dict) and len(item) <= 24 else None))
+            else:
+                rows.append(_titem(f"[{i}]", sub=_preview(item), path=item_path))
+        return _titem(f"{key} ({len(value)})", path=path, children=rows)
+    return _titem(key, sub=_preview(value), path=path)
 
-    def rect_contains(rect, x, y):
-        return (rect.get("x", 1 << 60) <= x < rect.get("x", 0) + rect.get("width", 0)
-                and rect.get("y", 1 << 60) <= y < rect.get("y", 0) + rect.get("height", 0))
-
-    claims: dict[str, str] = {}
-    ship_addresses = _ship_subtree_claims(snap)
-    for index, element in enumerate(snap.get("interaction_elements") or []):
-        if element.get("address") in ship_addresses:
-            claims[element["address"]] = "ship_ui"
-            continue
-        # 用可见足迹判定归属：虚拟化/滚动元素的原始矩形会远超容器，
-        # 其中心落在容器外，但其 visible_region 在容器内。
-        region = element.get("visible_region") or element.get("region") or {}
-        if not region:
-            continue
-        cx = region.get("x", 0) + region.get("width", 0) // 2
-        cy = region.get("y", 0) + region.get("height", 0) // 2
-        # 已被更小的通用窗口（弹窗等）持有的元素保持原归属
-        owner = generic.get(element.get("window_address"))
-        # 多区段重叠时取最小包含矩形（窗口套窗口时内层拥有），
-        # 而非遍历顺序的最后一个。
-        best = None
-        best_area = None
-        for rect, title in sections:
-            if not rect_contains(rect, cx, cy):
-                continue
-            if owner and rect_contains(owner, cx, cy) and (
-                    (owner.get("width", 0) * owner.get("height", 0))
-                    <= (rect.get("width", 0) * rect.get("height", 0))):
-                best = None  # 浮窗更小更精确
-                break
-            area = rect.get("width", 0) * rect.get("height", 0)
-            if best_area is None or area < best_area:
-                best = title
-                best_area = area
-        if best:
-            claims[element["address"]] = best
-    return claims
 
 def build_tree(snap: dict) -> list:
-    """语义结构树：如实的 read_snapshot() 层级投影。
+    """语义结构树：agent 的 read_snapshot() 快照的忠实结构镜像。
 
-    Faithful structural projection of the snapshot the Python API
-    returns — sections keep their snapshot field names; every item's
-    ``path`` points into the raw snapshot (click-to-JSON in the view).
+    顶层区段 = 快照顶层键（原序）；嵌套 = 真实字段/数组结构；每行可点
+    击查看该片段的原始 JSON。不做任何视图层重组/认领/摘要拼装——对树
+    的结构诉求应通过修改快照结构实现（网页与 API 永远同源）。
     """
-    children = []
-    claims = _specialized_claims(snap)
-    by_section = {}
-    for i, e in enumerate(snap.get("interaction_elements") or []):
-        title = claims.get(e.get("address"))
-        if title:
-            by_section.setdefault(title, []).append(_element_row(e, i))
-
-    state = snap.get("game_state") or {}
-    sub = str(state.get("screen"))
-    if state.get("blocked_by_modal"):
-        sub += f" · 模态:{state.get('blocked_by_modal')}"
-    children.append(_titem("game_state", sub=sub, path=["game_state"]))
-
-    cs = snap.get("client_size")
-    if cs:
-        children.append(_titem("client_size",
-                               sub=f"{cs.get('width')}×{cs.get('height')}",
-                               path=["client_size"]))
-
-    ship = snap.get("ship_ui")
-    if ship:
-        racks = []
-        for key, name in (("module_buttons_high", "高槽"),
-                          ("module_buttons_mid", "中槽"),
-                          ("module_buttons_low", "低槽")):
-            buttons = ship.get(key) or []
-            racks.append(_titem(f"{name} ({len(buttons)})", children=[
-                _titem(b.get("module_name") or b.get("icon_name") or "?",
-                       sub=" / ".join(filter(None, [
-                           f"typeID {b['type_id']}" if b.get("type_id") else None,
-                           f"超载:{b['overload']['state']}" if b.get("overload") else None,
-                           "激活" if b.get("is_active") else None,
-                           "忙碌" if b.get("is_busy") else None])),
-                       rect=b.get("region"), path=["ship_ui", key, i])
-                for i, b in enumerate(buttons)]))
-        hp = ship.get("hitpoints") or {}
-        gauge_sub = (f"电容 {ship.get('capacitor_percent')}% · "
-                     f"护盾 {hp.get('shield_percent')}% · 速度 {ship.get('speed_text')}"
-                     if ship.get("capacitor_percent") is not None else "HUD")
-        hud = ship.get("hud_buttons") or []
-        if hud:
-            racks.append(_titem(f"HUD 按钮 ({len(hud)})", children=[
-                _titem(f"{(b.get('kind') or '').removeprefix('hud.')}",
-                       sub=" / ".join(filter(None, [
-                           b.get("label"),
-                           "[开]" if b.get("is_on") is True else "[关]" if b.get("is_on") is False else None,
-                           "禁用" if b.get("is_enabled") is False else None])),
-                       rect=b.get("region"),
-                       off=b.get("is_enabled") is False,
-                       path=["ship_ui", "hud_buttons", i])
-                for i, b in enumerate(hud)]))
-        # 其余 HUD 控件（未结构化进 hud_buttons / 模块槽位的）按
-        # element_tree 层级挂载；已结构化的按矩形排除避免重复。
-        structured = set()
-        for b in hud:
-            rg = b.get("region") or {}
-            structured.add((rg.get("x"), rg.get("y"), rg.get("width"), rg.get("height")))
-        for key in ("module_buttons_high", "module_buttons_mid", "module_buttons_low"):
-            for m in ship.get(key) or []:
-                rg = m.get("region") or {}
-                structured.add((rg.get("x"), rg.get("y"), rg.get("width"), rg.get("height")))
-        rest = [row for row in by_section.get("ship_ui", [])
-                if tuple(row.get("r") or ()) not in structured]
-        if rest:
-            racks.append(_titem(f"其他 HUD 控件 ({len(rest)})",
-                                children=_window_control_tree(snap, rest, {"region": ship.get("region")})))
-        children.append(_titem("ship_ui", sub=gauge_sub, path=["ship_ui"], children=racks))
-
-    charsel = snap.get("character_select")
-    if charsel:
-        slots = charsel.get("slots") or []
-        children.append(_titem("character_select", children=[
-            _titem(slot.get("name") or f"slot#{slot.get('index')}",
-                   sub=((slot.get("details") or ["", ""])[0] or "")[:30] or None,
-                   rect=slot.get("region"),
-                   path=["character_select", "slots", i])
-            for i, slot in enumerate(slots)]))
-
-    _window_sections(snap, children, by_section)
-
-    for key, name in (("station_window", "站内服务"), ("fitting_window", "装配")):
-        window = snap.get(key)
-        if isinstance(window, dict):
-            children.append(_titem(name, rect=window.get("region"), path=[key],
-                                   children=by_section.get(name)))
-
-    stacks = snap.get("chat_window_stacks") or []
-    if stacks:
-        stack_children = []
-        for i, stack in enumerate(stacks):
-            tabs = [_titem(w.get("caption") or "?",
-                           sub=f"{len(w.get('users') or [])} 人" if w.get("users") else None,
-                           path=["chat_window_stacks", i, "windows", j])
-                    for j, w in enumerate(stack.get("windows") or [])]
-            claimed = _claimed_under_window(by_section.get("聊天窗口栈", []), stack)
-            control_tree = _window_control_tree(snap, claimed, stack) if claimed else []
-            stack_children.append(_titem(
-                " / ".join(filter(None, [w.get("caption") for w in (stack.get("windows") or [])[:3]])) or "栈",
-                sub=f"{len(stack.get('windows') or [])} 个标签页"
-                    + (f" · {len(claimed)} 控件" if claimed else ""),
-                rect=stack.get("region"), path=["chat_window_stacks", i],
-                children=tabs + control_tree))
-        children.append(_titem(f"聊天窗口栈 ({len(stacks)})", children=stack_children))
-
-    others = snap.get("other_windows") or []
-    if others:
-        children.append(_titem(f"其他窗口 ({len(others)})", children=[
-            _titem(w.get("caption") or w.get("type_name"),
-                   sub=f"{len(w.get('element_addresses') or [])} 个元素",
-                   address=w.get("address"), rect=w.get("region"),
-                   path=["other_windows", i])
-            for i, w in enumerate(others)]))
-
-    elements = snap.get("interaction_elements") or []
-    if elements:
-        rest = [e for e in elements if e.get("address") not in claims]
-        children.append(_titem(
-            f"interaction_elements ({len(rest)})"
-            + (f"，另 {len(claims)} 个已归入上方窗口区段" if claims else ""),
-            children=_elements_grouped(snap, claimed=set(claims))))
-
-    counts = [(k, len(snap.get(k) or [])) for k in
-              ("neocom", "scrollable_views", "layers",
-               "fitting_window", "station_window", "info_panels",
-               "selected_item_window")]
-    summary = " / ".join(f"{k} {c}" for k, c in counts if c) or "无"
-    children.append(_titem("其他区段", sub=summary))
-    return children
+    return [_render(key, value, [key], 0) for key, value in snap.items()]
 
 
 # ---------------------------------------------------------------- server ---
