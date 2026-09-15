@@ -374,7 +374,7 @@ impl PyUiReader {
     /// capacitor, hitpoints), `overview_windows` (entries with
     /// name/distance/interactability), `context_menus`,
     /// `inventory_windows`, `neocom` and `interaction_elements`
-    /// (every actionable element with role / is_interactable /
+    /// (every actionable element with role / is_click_reachable /
     /// occluded_by). Full schema in the bundled docs.
     ///
     /// Args:

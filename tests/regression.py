@@ -87,7 +87,7 @@ def main(sample: Path) -> int:
         check("first entry distance", first["distance_meters"], EXPECTED["first_entry_distance"])
         check(
             "first entry interactable",
-            first["is_interactable"],
+            first["is_click_reachable"],
             EXPECTED["first_entry_interactable"],
         )
         occluders = {
@@ -107,14 +107,14 @@ def main(sample: Path) -> int:
     ship = snapshot["ship_ui"]
     if ship:
         mid = ship["module_buttons_mid"]
-        mid_ok = all(b["is_interactable"] for b in mid) if mid else True
+        mid_ok = all(b["is_click_reachable"] for b in mid) if mid else True
         check("mid modules interactable", mid_ok, EXPECTED["module_mid_interactable"])
 
     neocom = snapshot["neocom"]
     if neocom:
         check(
             "neocom interactable count",
-            (sum(1 for b in neocom["buttons"] if b["is_interactable"]), len(neocom["buttons"])),
+            (sum(1 for b in neocom["buttons"] if b["is_click_reachable"]), len(neocom["buttons"])),
             EXPECTED["neocom_interactable_count"],
         )
 

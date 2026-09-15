@@ -39,6 +39,7 @@ _PAGE = Path(__file__).with_name("view.html")
 # ---------------------------------------------------------------- scene ---
 
 _INTERACTABLE, _PASSIVE, _BLOCKED = 1, 0, 2
+_DISABLED = 2  # 禁用与遮挡同为"无效"视觉类（红），标志文字区分
 
 
 def _occluders(info: dict | None) -> list[list[int]]:
@@ -76,9 +77,11 @@ def _node(kind, region, label=None, sub=None, icon=None, cls=_PASSIVE,
 
 
 def _interactable(source: dict) -> int:
-    # InteractionInfo is serde-flattened: is_interactable / occluded_*
+    # InteractionInfo is serde-flattened: is_click_reachable / occluded_*
     # live at the TOP LEVEL of the node dict, not under "interaction".
-    if not source.get("is_interactable", True):
+    if not source.get("is_enabled", True):
+        return _DISABLED
+    if not source.get("is_click_reachable", True):
         return _BLOCKED
     return _INTERACTABLE
 
@@ -136,7 +139,7 @@ def build_scene(snap: dict) -> dict:
                    or (window.get("type_name") or "").removesuffix("Wnd").removesuffix("Window"))
         take(_node("window", region,
                    label=caption,
-                   cls=_INTERACTABLE if window.get("is_interactable", True) else _PASSIVE,
+                   cls=_INTERACTABLE if window.get("is_enabled", True) else _DISABLED,
                    interaction=window,
                    detail={
                        "kind": "other_window",
@@ -269,9 +272,9 @@ def build_scene(snap: dict) -> dict:
         key = (region.get("x"), region.get("y"), region.get("width"), region.get("height"))
         if key in taken:
             continue
-        info = {"is_interactable": True, "occluded_percent": 0}
-        info.update({k: element[k] for k in ("is_interactable", "occluded_percent") if k in element})
-        if not info.get("is_interactable", True) or info.get("occluded_percent", 0) >= 50:
+        info = {"is_click_reachable": True, "occluded_percent": 0}
+        info.update({k: element[k] for k in ("is_click_reachable", "occluded_percent") if k in element})
+        if not info.get("is_click_reachable", True) or info.get("occluded_percent", 0) >= 50:
             cls = _BLOCKED
         elif element.get("role"):
             cls = _INTERACTABLE
@@ -373,10 +376,10 @@ def _titem(label, sub=None, address=None, rect=None, path=None, children=None, o
 
 def _element_row(element, index):
     flags = []
-    if element.get("is_interactable") is True:
-        pass
-    elif element.get("is_interactable") is False:
-        flags.append("不可交互")
+    if element.get("is_enabled") is False:
+        flags.append("禁用")
+    if element.get("is_click_reachable") is False:
+        flags.append("点击不可达")
     if (element.get("occluded_percent") or 0) >= 50:
         flags.append("遮挡")
     if element.get("is_on_screen") is False:
@@ -387,7 +390,7 @@ def _element_row(element, index):
             element.get("role"), element.get("icon_name"), *flags])),
         address=element.get("address"), rect=element.get("region"),
         path=["interaction_elements", index],
-        off=element.get("is_interactable") is False)
+        off=element.get("is_enabled") is False)
 
 
 def _container_label(node: dict) -> str:

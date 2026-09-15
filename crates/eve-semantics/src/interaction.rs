@@ -18,7 +18,7 @@
 //! 2. **Sampled occlusion** ([`interaction_info`]): probe an element's
 //!    region on a 3×3 grid; every probe whose hit lands outside the
 //!    element's subtree names an occluder. This yields honest
-//!    `occluded_percent` / `occluded_by` values and an `is_interactable`
+//!    `occluded_percent` / `occluded_by` values and an `is_click_reachable`
 //!    verdict for the element's center.
 //!
 //! Caveat kept visible on purpose: child order is a convention, not a
@@ -220,7 +220,14 @@ impl<'a> From<&'a RegionedNode<'a>> for OccluderRef {
 pub struct InteractionInfo {
     /// A click on the element's center reaches the element's subtree, the
     /// element is not a dead zone, and it is not opacity-hidden.
-    pub is_interactable: bool,
+    /// Would a click at the element's center ROUTE to it (occlusion /
+    /// pick-state / opacity view — NOT the control's own enabled state;
+    /// see `is_enabled`).
+    pub is_click_reachable: bool,
+    /// The control's OWN enabled state (`_interaction_state` carries a
+    /// `disabled` entry) — a disabled button ignores clicks even when
+    /// nothing occludes it.
+    pub is_enabled: bool,
     /// Percent of probed points whose hit landed outside the subtree.
     pub occluded_percent: i64,
     /// Distinct winners of the occluded probes, deepest first.
@@ -288,10 +295,24 @@ pub fn interaction_info_with_order(
         (occluded_probes as i64 * 100) / probes as i64
     };
     info.occluded_by = occluders;
-    info.is_interactable = center_reaches
+    info.is_click_reachable = center_reaches
         && node.pick_state() != Some(PICK_STATE_DEAD)
         && !node.is_opacity_hidden();
+    info.is_enabled = !element_disabled(node);
     info
+}
+
+/// Does the node's `_interaction_state` list carry a `disabled` entry?
+/// The state objects expose their name via `_name_` (with a trailing
+/// underscore) — the client marks grayed-out controls this way.
+fn element_disabled(node: &RegionedNode<'_>) -> bool {
+    match node.entries().get("_interaction_state") {
+        Some(eve_memory::NodeValue::List(states)) => states.iter().any(|state| {
+            matches!(state, eve_memory::NodeValue::Str(text)
+                if text.to_ascii_lowercase().contains("disabled"))
+        }),
+        _ => false,
+    }
 }
 
 /// 3×3 grid of points inside the region (single center when degenerate).
@@ -770,7 +791,7 @@ mod tests {
         // The button therefore reports itself occluded and not operable.
         let button_view = tree.find_by_type("ModuleButton").next().unwrap();
         let info = interaction_info_with_order(&tree, button_view, None);
-        assert!(!info.is_interactable);
+        assert!(!info.is_click_reachable);
         assert_eq!(info.occluded_percent, 100);
         assert_eq!(info.occluded_by.len(), 1);
         assert_eq!(info.occluded_by[0].type_name, "Panel");
@@ -819,7 +840,7 @@ mod tests {
             .find(|n| n.type_name() == "Button" && n.total_region.x == 10)
             .unwrap();
         let info = interaction_info_with_order(&tree, dead_button, None);
-        assert!(!info.is_interactable);
+        assert!(!info.is_click_reachable);
     }
 
     #[test]
@@ -856,12 +877,12 @@ mod tests {
             .find(|n| n.type_name() == "Button" && n.total_region.y == 250)
             .unwrap();
         let info = interaction_info_with_order(&tree, far_view, None);
-        assert!(!info.is_interactable);
+        assert!(!info.is_click_reachable);
         assert_eq!(info.occluded_percent, 100);
     }
 
     #[test]
-    fn unobstructed_button_is_interactable() {
+    fn unobstructed_button_is_click_reachable() {
         let button = node(
             "Button",
             region_entries(10, 10, 30, 30, Some(PICK_STATE_TAKES)),
@@ -871,7 +892,7 @@ mod tests {
         let tree = RegionedTree::build(&root);
         let button_view = tree.find_by_type("Button").next().unwrap();
         let info = interaction_info_with_order(&tree, button_view, None);
-        assert!(info.is_interactable);
+        assert!(info.is_click_reachable);
         assert_eq!(info.occluded_percent, 0);
         assert!(info.occluded_by.is_empty());
     }
@@ -885,7 +906,7 @@ mod tests {
         let tree = RegionedTree::build(&root);
         let button_view = tree.find_by_type("Button").next().unwrap();
         let info = interaction_info_with_order(&tree, button_view, None);
-        assert!(!info.is_interactable);
+        assert!(!info.is_click_reachable);
         assert_eq!(info.opacity, Some(0.0));
     }
 }

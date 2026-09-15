@@ -772,18 +772,45 @@ impl<'a> TreeWalker<'a> {
         let Ok(dict) = self.layout.instance_dict_direct(self.mem, address) else {
             return NodeValue::Str(FAILED_INTERACTION_STATE.to_string());
         };
+        // The concrete state subclass (Disabled / Hover / …) is the
+        // distinguishing signal; the optional _name refines it.
+        let type_name = self.type_name_of(address).unwrap_or_default();
+        let type_name = type_name.as_ref().to_string();
         if dict.is_null() {
-            return NodeValue::Str(FAILED_INTERACTION_STATE_DICT.to_string());
+            return NodeValue::Str(if type_name.is_empty() {
+                FAILED_INTERACTION_STATE_DICT.to_string()
+            } else {
+                type_name
+            });
         }
         let name = self
             .dict_pairs(dict)
             .into_iter()
-            .find(|(key, _)| self.dict_key_string(*key).as_deref() == Some("_name"))
+            .find(|(key, _)| matches!(self.dict_key_string(*key).as_deref(), Some("_name") | Some("_name_")))
             .and_then(|(_, value)| self.layout.read_str(self.mem, value, 100).ok());
-        match name {
-            Some(name) => NodeValue::Str(name),
-            None => NodeValue::Str(INTERACTION_STATE_NO_NAME.to_string()),
+        // The state's own dict often carries the distinguishing payload
+        // (brightness / texture / color) — include a compact summary.
+        let mut extras: Vec<String> = Vec::new();
+        for (key, value) in self.dict_pairs(dict).into_iter().take(8) {
+            let Some(key) = self.dict_key_string(key) else { continue };
+            if key.as_ref() == "_name" {
+                continue;
+            }
+            if let Ok(text) = self.layout.read_str(self.mem, value, 60) {
+                extras.push(format!("{key}={text}"));
+            }
         }
+        let mut label = match name {
+            Some(ref name) => format!("{type_name}:{name}"),
+            None => type_name.clone(),
+        };
+        if !extras.is_empty() {
+            label.push_str(&format!(" {{{}}}", extras.join(", ")));
+        }
+        if label.trim().is_empty() {
+            label = INTERACTION_STATE_NO_NAME.to_string();
+        }
+        NodeValue::Str(label)
     }
 
     fn decode_list(&self, address: Address, value_depth: u32) -> NodeValue {
