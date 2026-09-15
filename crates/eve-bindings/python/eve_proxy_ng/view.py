@@ -251,6 +251,20 @@ def build_scene(snap: dict) -> dict:
                                "is_active": button.get("is_active"),
                                "is_busy": button.get("is_busy"),
                            }))
+        for button in ship.get("hud_buttons") or []:
+            take(_node("hudbtn", button.get("region"),
+                       label=button.get("label") or (button.get("kind") or "").removeprefix("hud."),
+                       sub=(button.get("kind") or "").removeprefix("hud."),
+                       icon=button.get("icon"),
+                       cls=(_INTERACTABLE if button.get("is_enabled", True)
+                            and button.get("is_click_reachable", True) else _BLOCKED),
+                       interaction=button,
+                       detail={
+                           "kind": button.get("kind"),
+                           "is_on": button.get("is_on"),
+                           "is_enabled": button.get("is_enabled"),
+                           "is_click_reachable": button.get("is_click_reachable"),
+                       }))
         hp = ship.get("hitpoints") or {}
         take(_node("hud", ship.get("region"), detail={
             "capacitor_percent": ship.get("capacitor_percent"),
@@ -594,6 +608,18 @@ def build_tree(snap: dict) -> list:
         gauge_sub = (f"电容 {ship.get('capacitor_percent')}% · "
                      f"护盾 {hp.get('shield_percent')}% · 速度 {ship.get('speed_text')}"
                      if ship.get("capacitor_percent") is not None else "HUD")
+        hud = ship.get("hud_buttons") or []
+        if hud:
+            racks.append(_titem(f"HUD 按钮 ({len(hud)})", children=[
+                _titem(f"{(b.get('kind') or '').removeprefix('hud.')}",
+                       sub=" / ".join(filter(None, [
+                           b.get("label"),
+                           "[开]" if b.get("is_on") is True else "[关]" if b.get("is_on") is False else None,
+                           "禁用" if b.get("is_enabled") is False else None])),
+                       rect=b.get("region"),
+                       off=b.get("is_enabled") is False,
+                       path=["ship_ui", "hud_buttons", i])
+                for i, b in enumerate(hud)]))
         children.append(_titem("ship_ui", sub=gauge_sub, path=["ship_ui"], children=racks))
 
     charsel = snap.get("character_select")

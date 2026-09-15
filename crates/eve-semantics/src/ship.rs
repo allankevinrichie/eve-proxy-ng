@@ -83,6 +83,138 @@ pub struct ShipUi {
     pub indication: Option<ManeuverType>,
     /// Client-formatted speed text (locale-correct by construction).
     pub speed_text: Option<String>,
+    /// The full HUD control cluster: lock/fire buttons, auto-lock and
+    /// auto-focus-fire checkboxes, side function buttons (cargo,
+    /// tactical view, autopilot…), matrix slots, the safety button and
+    /// the three rack-overload buttons.
+    pub hud_buttons: Vec<HudButton>,
+}
+
+/// One HUD control outside the module racks.
+#[derive(Clone, Debug, Serialize)]
+pub struct HudButton {
+    /// Semantic id (`hud.lock_all`, `hud.auto_lock`, `hud.cargo_hold`,
+    /// `hud.overload_high`, `hud.safety`, …).
+    pub kind: String,
+    pub region: DisplayRegion,
+    #[serde(flatten)]
+    pub interaction: InteractionInfo,
+    /// User-facing label: the checkbox text or the button hint (which
+    /// carries toggle state wording, e.g. 开启/关闭自动导航).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_name: Option<String>,
+    /// Toggle/checkbox state when detectable (checkbox `_checked`; the
+    /// flipped hint 关闭/隐藏 prefix means ON).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_on: Option<bool>,
+}
+
+/// Node → semantic kind mapping for HUD controls (type-name or
+/// node-name based; both are stable client structure).
+fn hud_kind(node: &RegionedNode<'_>) -> Option<&'static str> {
+    let type_name = node.type_name();
+    let name = node.name().unwrap_or("");
+    Some(match (type_name, name) {
+        ("QuickLockButton", _) => "hud.lock_all",
+        ("CheckboxWithTooltip", "autolockcheckbox") => "hud.auto_lock",
+        ("CheckboxWithTooltip", "autofirecheckbox") => "hud.auto_focus_fire",
+        ("FireFocusButton", _) => "hud.fire",
+        ("LockOption", _) => "hud.lock_settings",
+        ("LockStopButton", _) => "hud.unlock_all",
+        ("FireOption", _) => "hud.fire_settings",
+        ("FireStopButton", _) => "hud.stop_attack",
+        ("SafetyButton", _) => "hud.safety",
+        ("LeftSideButtonCameraTactical", _) => "hud.camera_tactical",
+        ("LeftSideButtonCameraOrbit", _) => "hud.camera_orbit",
+        ("LeftSideButtonCameraPOV", _) => "hud.camera_pov",
+        ("LeftSideButtonCargo", _) => "hud.cargo_hold",
+        ("LeftSideButtonTactical", _) => "hud.tactical_view",
+        ("LeftSideButtonScanner", _) => "hud.scanner",
+        ("LeftSideButtonAutopilot", _) => "hud.autopilot",
+        ("LeftSideButtonMiningScan", _) => "hud.mining_scan",
+        ("ButtonIcon", _) if node
+            .name().is_none() => return None, // matrix icons matched by parent below
+        ("OverloadBtn", "overloadBtnHi") => "hud.overload_high",
+        ("OverloadBtn", "overloadBtnMed") => "hud.overload_mid",
+        ("OverloadBtn", "overloadBtnLo") => "hud.overload_low",
+        _ => return None,
+    })
+}
+
+fn extract_hud_buttons(
+    tree: &RegionedTree<'_>,
+    ship_node: &RegionedNode<'_>,
+) -> Vec<HudButton> {
+    let mut buttons = Vec::new();
+    for node in tree.subtree_iter(ship_node.index).skip(1) {
+        if let Some(kind) = hud_kind(node) {
+            let hint = node.hint().map(str::to_string);
+            // Checkbox labels come from their text child; other buttons
+            // carry the state-worded hint.
+            let label = if node.type_name() == "CheckboxWithTooltip" {
+                tree.subtree_iter(node.index)
+                    .find(|child| child.name() == Some("text"))
+                    .and_then(|child| child.text())
+                    .map(|text| crate::parsing::strip_markup(&text))
+                    .or(hint.clone())
+            } else {
+                hint.clone()
+            };
+            let is_on = match node.type_name() {
+                "CheckboxWithTooltip" => node.boolean("_checked"),
+                // Toggle buttons flip their hint when on: 关闭自动导航 /
+                // 隐藏战术视图 mean the feature is currently ON.
+                "LeftSideButtonAutopilot" | "LeftSideButtonTactical" => hint
+                    .as_deref()
+                    .map(|h| h.starts_with("关闭") || h.starts_with("隐藏"))
+                    .or(Some(false)),
+                _ => None,
+            };
+            let icon = crate::icons::element_icon(tree, node);
+            let icon_name = icon
+                .as_deref()
+                .and_then(crate::icons::semantic_icon_name);
+            buttons.push(HudButton {
+                kind: kind.to_string(),
+                region: node.total_region,
+                interaction: crate::interaction::interaction_info(tree, node),
+                label,
+                icon,
+                icon_name,
+                is_on,
+            });
+        }
+    }
+    // Matrix slots: the two unnamed ButtonIcons under matrixslotButtons.
+    if let Some(container) = tree
+        .subtree_iter(ship_node.index)
+        .find(|node| node.name() == Some("matrixslotButtons"))
+    {
+        for (index, node) in tree
+            .children_of(container)
+            .filter(|child| child.type_name() == "ButtonIcon")
+            .enumerate()
+        {
+            let icon = crate::icons::element_icon(tree, node);
+            let icon_name = icon
+                .as_deref()
+                .and_then(crate::icons::semantic_icon_name);
+            buttons.push(HudButton {
+                kind: format!("hud.matrix_{}", index + 1),
+                region: node.total_region,
+                interaction: crate::interaction::interaction_info(tree, node),
+                label: icon_name.clone(),
+                icon,
+                icon_name,
+                is_on: None,
+            });
+        }
+    }
+    buttons
 }
 
 /// The HUD shows modules as icons only. Two complementary
@@ -168,6 +300,7 @@ pub fn extract_ship_ui(tree: &RegionedTree<'_>) -> Option<ShipUi> {
         hitpoints,
         indication: indication_from(tree, ship_node),
         speed_text: speed_text_from(&ship_descendants),
+        hud_buttons: extract_hud_buttons(tree, ship_node),
     })
 }
 

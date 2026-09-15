@@ -106,7 +106,7 @@ const layers = { windows: true, overview: true, modules: true, menus: true, elem
 const KIND_OF = {
   window: "windows", tab: "windows", charslot: "windows",
   overview: "overview", item: "overview",
-  module: "modules", menu: "menus", menuitem: "menus",
+  module: "modules", hudbtn: "modules", menu: "menus", menuitem: "menus",
   hud: "modules", element: "elements", neocom: "elements",
 };
 const COLORS = {
@@ -226,7 +226,7 @@ function draw() {
     }
   }
   const order = ["element", "neocom", "charslot", "window", "tab",
-                 "item", "menuitem", "menu", "overview", "hud", "module"];
+                 "item", "menuitem", "menu", "overview", "hud", "hudbtn", "module"];
   for (const kind of order) {
     for (const n of nodes) {
       if (n.k !== kind || !layers[KIND_OF[kind]]) continue;
@@ -301,6 +301,33 @@ function drawNode(n) {
              COLORS.dim, null, "center");
       }
       if (d.is_active) { ctx.fillStyle = COLORS.green; ctx.fillRect(x + 2, y + 2, 4, 4); }
+      break;
+    }
+    case "hudbtn": {
+      const d = n.d || {};
+      ctx.fillStyle = COLORS.panel;
+      ctx.fillRect(x, y, w, h);
+      let border = COLORS.border;
+      if (d.is_on === true) border = COLORS.green;
+      else if (d.is_on === false) border = COLORS.border;
+      else if (d.is_enabled === false) border = COLORS.dim;
+      ctx.strokeStyle = border; ctx.lineWidth = d.is_on === true ? 2 : 1;
+      ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+      const img = icon(n.i);
+      if (img) {
+        const sz = Math.min(w, h) - 8;
+        ctx.drawImage(img, x + (w - sz) / 2, y + (h - sz) / 2, sz, sz);
+      } else if (n.l) {
+        text(clipText(n.l.slice(0, 3), w - 4), x + w / 2, y + h / 2,
+             COLORS.dim, null, "center");
+      }
+      if (d.is_on === true) { ctx.fillStyle = COLORS.green; ctx.fillRect(x + 2, y + 2, 4, 4); }
+      if (d.is_enabled === false) {
+        ctx.strokeStyle = COLORS.dim + "88";
+        ctx.beginPath();
+        ctx.moveTo(x + 3, y + h - 3); ctx.lineTo(x + w - 3, y + 3);
+        ctx.stroke();
+      }
       break;
     }
     case "hud": {
