@@ -76,6 +76,11 @@ pub struct MessageBoxButton {
 #[derive(Clone, Debug, Serialize)]
 pub struct Neocom {
     pub region: DisplayRegion,
+    /// 本根拥有的交互元素地址（树成员判定；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本根节点地址。
+    pub address: String,
+
     pub buttons: Vec<NeocomButton>,
     /// Minutes since midnight.
     pub clock_minutes: Option<i64>,
@@ -113,6 +118,11 @@ pub struct ChatWindow {
 #[derive(Clone, Debug, Serialize)]
 pub struct InfoPanelContainerSummary {
     pub region: DisplayRegion,
+    /// 本根拥有的交互元素地址（树成员判定；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本根节点地址。
+    pub address: String,
+
     pub panels: Vec<InfoPanelSummary>,
 }
 
@@ -128,6 +138,11 @@ pub struct InfoPanelSummary {
 #[derive(Clone, Debug, Serialize)]
 pub struct SelectedItemWindow {
     pub region: DisplayRegion,
+    /// 本根拥有的交互元素地址（树成员判定；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本根节点地址。
+    pub address: String,
+
     pub buttons: Vec<SelectedItemButton>,
 }
 
@@ -344,6 +359,8 @@ pub fn extract_neocom(tree: &RegionedTree<'_>) -> Option<Neocom> {
         .and_then(|clock| clock.text().as_deref().map(crate::parsing::parse_clock_minutes))
         .flatten();
     Some(Neocom {
+        element_addresses: Vec::new(),
+        address: container.node.address.0.to_string(),
         region: container.total_region,
         buttons,
         clock_minutes,
@@ -411,6 +428,8 @@ pub fn extract_info_panels(tree: &RegionedTree<'_>) -> Option<InfoPanelContainer
         }
     }
     Some(InfoPanelContainerSummary {
+        element_addresses: Vec::new(),
+        address: container.node.address.0.to_string(),
         region: container.total_region,
         panels,
     })
@@ -444,6 +463,8 @@ pub fn extract_selected_item(tree: &RegionedTree<'_>) -> Option<SelectedItemWind
         })
         .collect();
     Some(SelectedItemWindow {
+        element_addresses: Vec::new(),
+        address: window.node.address.0.to_string(),
         region: window.total_region,
         buttons,
     })

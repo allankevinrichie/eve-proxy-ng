@@ -107,6 +107,9 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
     let mut station_window = station::extract_station_window(&regioned);
     let mut fitting_window = fitting::extract_fitting_window(&regioned);
     let mut chat_window_stacks = windows::extract_chat_window_stacks(&regioned);
+    let mut neocom = windows::extract_neocom(&regioned);
+    let mut info_panels = windows::extract_info_panels(&regioned);
+    let mut selected_item_window = windows::extract_selected_item(&regioned);
     // ── 元素归属（树成员判定）──────────────────────────────────────
     // 元素祖先链上最近的语义根拥有它：ShipUI / 特化窗口类型 /
     // other_windows 的通用窗口节点。每个元素恰好一个归属，
@@ -192,6 +195,15 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
     for window in &mut other_windows {
         fill(&mut window.element_addresses, &window.address);
     }
+    if let Some(neocom) = &mut neocom {
+        fill(&mut neocom.element_addresses, &neocom.address);
+    }
+    if let Some(panels) = &mut info_panels {
+        fill(&mut panels.element_addresses, &panels.address);
+    }
+    if let Some(window) = &mut selected_item_window {
+        fill(&mut window.element_addresses, &window.address);
+    }
     let interaction_us = interaction_start.elapsed().as_micros() as u64;
 
     let extractors_start = std::time::Instant::now();
@@ -215,9 +227,9 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         util_menus: menu::extract_util_menus(&regioned),
         inventory_windows,
         message_boxes,
-        neocom: windows::extract_neocom(&regioned),
-        info_panels: windows::extract_info_panels(&regioned),
-        selected_item_window: windows::extract_selected_item(&regioned),
+        neocom,
+        info_panels,
+        selected_item_window,
         chat_window_stacks,
         fitting_window,
         station_window,
