@@ -607,6 +607,32 @@ def _window_sections(snap: dict, children: list, by_section: dict | None = None)
 
 
 
+def _ship_subtree_claims(snap: dict) -> set:
+    """ShipUI 子树内的元素地址（树成员判定，非几何——避免误收恰好在
+    HUD 圆区域的太空括号）。"""
+    addresses = set()
+
+    def collect(node):
+        for a in (node.get("elements") or []):
+            addresses.add(a)
+        for child in (node.get("children") or []):
+            collect(child)
+
+    # element_tree 的单链坍缩会融掉 ShipUI 本身（无直系元素+单容器
+    # 链），其子件直接上提——以 HUD 的实际根集合为锚。
+    SHIP_ROOTS = {"hudContainer", "matrixslotButtons", "MiningScanButtons"}
+
+    def find_roots(nodes):
+        for n in nodes:
+            if n.get("type_name") == "ShipUI" or n.get("name") in SHIP_ROOTS:
+                collect(n)
+            else:
+                find_roots(n.get("children") or [])
+
+    find_roots(snap.get("element_tree") or [])
+    return addresses
+
+
 def _specialized_claims(snap: dict) -> dict:
     """address -> section title：被特化窗口区段认领的元素。
 
@@ -633,7 +659,11 @@ def _specialized_claims(snap: dict) -> dict:
                 and rect.get("y", 1 << 60) <= y < rect.get("y", 0) + rect.get("height", 0))
 
     claims: dict[str, str] = {}
+    ship_addresses = _ship_subtree_claims(snap)
     for index, element in enumerate(snap.get("interaction_elements") or []):
+        if element.get("address") in ship_addresses:
+            claims[element["address"]] = "ship_ui"
+            continue
         # 用可见足迹判定归属：虚拟化/滚动元素的原始矩形会远超容器，
         # 其中心落在容器外，但其 visible_region 在容器内。
         region = element.get("visible_region") or element.get("region") or {}
@@ -643,15 +673,22 @@ def _specialized_claims(snap: dict) -> dict:
         cy = region.get("y", 0) + region.get("height", 0) // 2
         # 已被更小的通用窗口（弹窗等）持有的元素保持原归属
         owner = generic.get(element.get("window_address"))
+        # 多区段重叠时取最小包含矩形（窗口套窗口时内层拥有），
+        # 而非遍历顺序的最后一个。
         best = None
+        best_area = None
         for rect, title in sections:
-            if rect_contains(rect, cx, cy):
-                if owner and rect_contains(owner, cx, cy) and (
-                        (owner.get("width", 0) * owner.get("height", 0))
-                        <= (rect.get("width", 0) * rect.get("height", 0))):
-                    best = None  # 浮窗更小更精确
-                    break
+            if not rect_contains(rect, cx, cy):
+                continue
+            if owner and rect_contains(owner, cx, cy) and (
+                    (owner.get("width", 0) * owner.get("height", 0))
+                    <= (rect.get("width", 0) * rect.get("height", 0))):
+                best = None  # 浮窗更小更精确
+                break
+            area = rect.get("width", 0) * rect.get("height", 0)
+            if best_area is None or area < best_area:
                 best = title
+                best_area = area
         if best:
             claims[element["address"]] = best
     return claims
@@ -664,6 +701,12 @@ def build_tree(snap: dict) -> list:
     ``path`` points into the raw snapshot (click-to-JSON in the view).
     """
     children = []
+    claims = _specialized_claims(snap)
+    by_section = {}
+    for i, e in enumerate(snap.get("interaction_elements") or []):
+        title = claims.get(e.get("address"))
+        if title:
+            by_section.setdefault(title, []).append(_element_row(e, i))
 
     state = snap.get("game_state") or {}
     sub = str(state.get("screen"))
@@ -709,6 +752,21 @@ def build_tree(snap: dict) -> list:
                        off=b.get("is_enabled") is False,
                        path=["ship_ui", "hud_buttons", i])
                 for i, b in enumerate(hud)]))
+        # 其余 HUD 控件（未结构化进 hud_buttons / 模块槽位的）按
+        # element_tree 层级挂载；已结构化的按矩形排除避免重复。
+        structured = set()
+        for b in hud:
+            rg = b.get("region") or {}
+            structured.add((rg.get("x"), rg.get("y"), rg.get("width"), rg.get("height")))
+        for key in ("module_buttons_high", "module_buttons_mid", "module_buttons_low"):
+            for m in ship.get(key) or []:
+                rg = m.get("region") or {}
+                structured.add((rg.get("x"), rg.get("y"), rg.get("width"), rg.get("height")))
+        rest = [row for row in by_section.get("ship_ui", [])
+                if tuple(row.get("r") or ()) not in structured]
+        if rest:
+            racks.append(_titem(f"其他 HUD 控件 ({len(rest)})",
+                                children=_window_control_tree(snap, rest, {"region": ship.get("region")})))
         children.append(_titem("ship_ui", sub=gauge_sub, path=["ship_ui"], children=racks))
 
     charsel = snap.get("character_select")
@@ -721,13 +779,6 @@ def build_tree(snap: dict) -> list:
                    path=["character_select", "slots", i])
             for i, slot in enumerate(slots)]))
 
-    claims = _specialized_claims(snap)
-    by_section = {}
-    for i, e in enumerate(snap.get("interaction_elements") or []):
-        title = claims.get(e.get("address"))
-        if title:
-            by_section.setdefault(title, []).append(_element_row(e, i))
-
     _window_sections(snap, children, by_section)
 
     for key, name in (("station_window", "站内服务"), ("fitting_window", "装配")):
@@ -738,17 +789,21 @@ def build_tree(snap: dict) -> list:
 
     stacks = snap.get("chat_window_stacks") or []
     if stacks:
-        children.append(_titem(f"聊天窗口栈 ({len(stacks)})", children=[
-            _titem(" / ".join(filter(None, [w.get("caption") for w in (s.get("windows") or [])[:3]])) or "栈",
-                   sub=f"{len(s.get('windows') or [])} 个标签页",
-                   rect=s.get("region"), path=["chat_window_stacks", i],
-                   children=[
-                       _titem(w.get("caption") or "?",
-                              sub=f"{len(w.get('users') or [])} 人" if w.get("users") else None,
-                              path=["chat_window_stack", i, "windows", j])
-                       for j, w in enumerate(s.get("windows") or [])]
-                       + by_section.get("聊天窗口栈", []))
-            for i, s in enumerate(stacks)]))
+        stack_children = []
+        for i, stack in enumerate(stacks):
+            tabs = [_titem(w.get("caption") or "?",
+                           sub=f"{len(w.get('users') or [])} 人" if w.get("users") else None,
+                           path=["chat_window_stacks", i, "windows", j])
+                    for j, w in enumerate(stack.get("windows") or [])]
+            claimed = _claimed_under_window(by_section.get("聊天窗口栈", []), stack)
+            control_tree = _window_control_tree(snap, claimed, stack) if claimed else []
+            stack_children.append(_titem(
+                " / ".join(filter(None, [w.get("caption") for w in (stack.get("windows") or [])[:3]])) or "栈",
+                sub=f"{len(stack.get('windows') or [])} 个标签页"
+                    + (f" · {len(claimed)} 控件" if claimed else ""),
+                rect=stack.get("region"), path=["chat_window_stacks", i],
+                children=tabs + control_tree))
+        children.append(_titem(f"聊天窗口栈 ({len(stacks)})", children=stack_children))
 
     others = snap.get("other_windows") or []
     if others:
