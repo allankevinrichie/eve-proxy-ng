@@ -159,14 +159,24 @@ def build_scene(snap: dict) -> dict:
                    }))
 
     # --- windows (frame + caption) ---
+    # List-typed window sections iterate directly; single-window sections
+    # (station/fitting) are Option<struct> — wrap in a one-item list.
+    def _windows_of(key: str, title: str | None) -> list:
+        value = snap.get(key)
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [(window, title) for window in value]
+        return [(value, title)]
+
     for key, title in (
         ("overview_windows", None),
         ("inventory_windows", None),
         ("station_window", "站内服务"),
         ("fitting_window", "装配"),
     ):
-        for window in snap.get(key) or []:
-            caption = title or window.get("caption") or window.get("window_caption")
+        for window, fixed_title in _windows_of(key, title):
+            caption = fixed_title or window.get("caption") or window.get("window_caption")
             take(_node("window", window.get("region"), label=caption, detail={
                 "kind": key, "caption": caption,
             }, interaction=window))
@@ -527,6 +537,11 @@ def build_tree(snap: dict) -> list:
             for i, slot in enumerate(slots)]))
 
     _window_sections(snap, children)
+
+    for key, name in (("station_window", "站内服务"), ("fitting_window", "装配")):
+        window = snap.get(key)
+        if isinstance(window, dict):
+            children.append(_titem(name, rect=window.get("region"), path=[key]))
 
     stacks = snap.get("chat_window_stacks") or []
     if stacks:
