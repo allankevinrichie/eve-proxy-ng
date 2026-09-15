@@ -82,6 +82,7 @@
   <label class="tog" data-k="menus">菜单</label>
   <label class="tog" data-k="elements">交互元素</label>
   <label class="tog" id="pause">暂停</label>
+  <label class="tog" id="export" title="下载当前语义结构（与 agent 的 read_snapshot() 完全同源）">导出 JSON</label>
 </header>
 <div id="stage"><canvas id="cv"></canvas></div>
 </div>
@@ -409,6 +410,7 @@ const es = new EventSource("/stream");
 es.onmessage = (ev) => {
   errEl.textContent = "";
   if (paused) { updates++; return; }
+
   applyScene(JSON.parse(ev.data));
   updates++;
   const now = performance.now();
@@ -432,10 +434,32 @@ document.querySelectorAll("label.tog[data-k]").forEach(el => {
   };
 });
 const pauseEl = document.getElementById("pause");
-pauseEl.onclick = () => {
-  paused = !paused;
+function setPaused(value) {
+  paused = value;
   pauseEl.classList.toggle("on", paused);
   pauseEl.textContent = paused ? "继续" : "暂停";
+  statsEl.innerHTML += paused ? " · <b>已暂停</b>" : "";
+}
+pauseEl.onclick = () => setPaused(!paused);
+window.addEventListener("keydown", (ev) => {
+  if (ev.code === "Space" && ev.target === document.body) {
+    ev.preventDefault();
+    setPaused(!paused);
+  }
+});
+
+// 导出当前语义结构：与 agent 的 read_snapshot() 完全同源。
+document.getElementById("export").onclick = async () => {
+  try {
+    const res = await fetch("/snapshot");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    const t = scene && scene.t ? scene.t : Date.now();
+    a.href = URL.createObjectURL(blob);
+    a.download = `eve_proxy_ng_snapshot_${t}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) { alert("导出失败: " + e); }
 };
 
 cv.addEventListener("mousemove", (ev) => {
