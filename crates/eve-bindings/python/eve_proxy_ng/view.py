@@ -318,6 +318,7 @@ def build_scene(snap: dict) -> dict:
     state = snap.get("game_state") or {}
     return {
         "t": int(time.time() * 1000),
+        "tree": build_tree(snap),
         "size": [max(1280, width), max(720, height)],
         "state": {"screen": state.get("screen"), "modal": state.get("blocked_by_modal")},
         "stats": {"nodes": len(nodes), "node_count": snap.get("node_count")},
@@ -339,6 +340,187 @@ def _fmt_distance(meters) -> str | None:
     return f"{meters} m"
 
 
+# ----------------------------------------------------------------- tree ---
+
+def _titem(label, sub=None, address=None, rect=None, path=None, children=None):
+    item = {"l": label}
+    if sub:
+        item["s"] = sub
+    if address:
+        item["a"] = address
+    if rect:
+        r = rect if isinstance(rect, (list, tuple)) else [
+            rect.get("x"), rect.get("y"), rect.get("width"), rect.get("height")]
+        item["r"] = r
+    if path is not None:
+        item["p"] = path
+    if children is not None:
+        item["c"] = children
+    return item
+
+
+def _element_row(element, index):
+    flags = []
+    if (element.get("occluded_percent") or 0) >= 50:
+        flags.append("遮挡")
+    if element.get("is_on_screen") is False:
+        flags.append("屏外")
+    return _titem(
+        element.get("label") or element.get("type_name"),
+        sub=" / ".join(filter(None, [
+            element.get("role"), element.get("icon_name"), *flags])),
+        address=element.get("address"), rect=element.get("region"),
+        path=["interaction_elements", index])
+
+
+def _elements_grouped(snap: dict) -> list:
+    """interaction_elements grouped by window_address — a faithful
+    grouping that uses only snapshot fields."""
+    windows = {w.get("address"): w for w in snap.get("other_windows") or []}
+    groups: dict = {}
+    order: list = []
+    for index, element in enumerate(snap.get("interaction_elements") or []):
+        key = element.get("window_address")
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append((element, index))
+    children = []
+    for key in order:
+        members = groups[key]
+        window = windows.get(key)
+        label = (window.get("caption") or window.get("type_name")) if window else "无所属窗口（HUD/游离）"
+        children.append(_titem(
+            label, sub=f"{len(members)} 个元素", address=key,
+            children=[_element_row(element, index) for element, index in members]))
+    return children
+
+
+def _window_sections(snap: dict, children: list) -> None:
+    """特化窗口区段（总览/库存/菜单/消息框）。"""
+    specs = (
+        ("overview_windows", "总览窗口"),
+        ("inventory_windows", "库存窗口"),
+        ("context_menus", "右键菜单"),
+        ("util_menus", "工具菜单"),
+        ("message_boxes", "消息框"),
+    )
+    for key, name in specs:
+        windows = snap.get(key) or []
+        if not windows:
+            continue
+        window_children = []
+        for i, window in enumerate(windows):
+            if key == "overview_windows":
+                entries = window.get("entries") or []
+                items = [_titem(e.get("object_name") or "?",
+                                sub=" / ".join(filter(None, [
+                                    _fmt_distance(e.get("distance_meters")),
+                                    e.get("icon_name")])),
+                                rect=e.get("region"),
+                                path=[key, i, "entries", j])
+                         for j, e in enumerate(entries)]
+                label = window.get("caption") or "总览"
+            elif key == "inventory_windows":
+                entries = window.get("items") or []
+                items = [_titem(it.get("name") or "?",
+                                sub=f"×{it.get('quantity')}" if it.get("quantity") else None,
+                                rect=it.get("region"), path=[key, i, "items", j])
+                         for j, it in enumerate(entries)]
+                label = "库存"
+            elif key in ("context_menus", "util_menus"):
+                rows = window.get("entries") or window.get("checkboxes") or []
+                items = [_titem(row.get("text") or "?",
+                                sub="已勾选" if row.get("is_checked") else None,
+                                rect=row.get("region"), path=[key, i])
+                         for row in rows]
+                label = " / ".join(filter(None, [r.get("text") for r in rows[:2]])) or "菜单"
+            else:
+                items = [_titem((window.get("text") or "?")[:24], path=[key, i])]
+                label = "消息"
+            window_children.append(_titem(label, sub=f"{len(items)} 项",
+                                          rect=window.get("region"), path=[key, i],
+                                          children=items))
+        children.append(_titem(f"{name} ({len(windows)})", children=window_children))
+
+
+def build_tree(snap: dict) -> list:
+    """语义结构树：如实的 read_snapshot() 层级投影。
+
+    Faithful structural projection of the snapshot the Python API
+    returns — sections keep their snapshot field names; every item's
+    ``path`` points into the raw snapshot (click-to-JSON in the view).
+    """
+    children = []
+
+    state = snap.get("game_state") or {}
+    sub = str(state.get("screen"))
+    if state.get("blocked_by_modal"):
+        sub += f" · 模态:{state.get('blocked_by_modal')}"
+    children.append(_titem("game_state", sub=sub, path=["game_state"]))
+
+    cs = snap.get("client_size")
+    if cs:
+        children.append(_titem("client_size",
+                               sub=f"{cs.get('width')}×{cs.get('height')}",
+                               path=["client_size"]))
+
+    ship = snap.get("ship_ui")
+    if ship:
+        racks = []
+        for key, name in (("module_buttons_high", "高槽"),
+                          ("module_buttons_mid", "中槽"),
+                          ("module_buttons_low", "低槽")):
+            buttons = ship.get(key) or []
+            racks.append(_titem(f"{name} ({len(buttons)})", children=[
+                _titem(b.get("module_name") or b.get("icon_name") or "?",
+                       sub=" / ".join(filter(None, [
+                           f"typeID {b['type_id']}" if b.get("type_id") else None,
+                           "激活" if b.get("is_active") else None,
+                           "忙碌" if b.get("is_busy") else None])),
+                       rect=b.get("region"), path=["ship_ui", key, i])
+                for i, b in enumerate(buttons)]))
+        hp = ship.get("hitpoints") or {}
+        gauge_sub = (f"电容 {ship.get('capacitor_percent')}% · "
+                     f"护盾 {hp.get('shield_percent')}% · 速度 {ship.get('speed_text')}"
+                     if ship.get("capacitor_percent") is not None else "HUD")
+        children.append(_titem("ship_ui", sub=gauge_sub, path=["ship_ui"], children=racks))
+
+    charsel = snap.get("character_select")
+    if charsel:
+        slots = charsel.get("slots") or []
+        children.append(_titem("character_select", children=[
+            _titem(slot.get("name") or f"slot#{slot.get('index')}",
+                   sub=((slot.get("details") or ["", ""])[0] or "")[:30] or None,
+                   rect=slot.get("region"),
+                   path=["character_select", "slots", i])
+            for i, slot in enumerate(slots)]))
+
+    _window_sections(snap, children)
+
+    others = snap.get("other_windows") or []
+    if others:
+        children.append(_titem(f"其他窗口 ({len(others)})", children=[
+            _titem(w.get("caption") or w.get("type_name"),
+                   sub=f"{len(w.get('element_addresses') or [])} 个元素",
+                   address=w.get("address"), rect=w.get("region"),
+                   path=["other_windows", i])
+            for i, w in enumerate(others)]))
+
+    elements = snap.get("interaction_elements") or []
+    if elements:
+        children.append(_titem(f"interaction_elements ({len(elements)})",
+                               children=_elements_grouped(snap)))
+
+    counts = [(k, len(snap.get(k) or [])) for k in
+              ("neocom", "chat_window_stacks", "scrollable_views", "layers",
+               "fitting_window", "station_window", "info_panels",
+               "selected_item_window")]
+    summary = " / ".join(f"{k} {c}" for k, c in counts if c) or "无"
+    children.append(_titem("其他区段", sub=summary))
+    return children
+
+
 # ---------------------------------------------------------------- server ---
 
 class _ViewServer:
@@ -349,6 +531,7 @@ class _ViewServer:
         self.interval = max(50, interval_ms) / 1000.0
         self.static = static  # sample replay: read once, keep serving
         self.scene: dict = {"error": "waiting for first frame"}
+        self.snapshot: dict = {}
         self.error: str | None = None
         self._clients: list = []
         self._lock = threading.Lock()
@@ -367,7 +550,7 @@ class _ViewServer:
                 scene = build_scene(snap)
                 scene["stats"]["build_ms"] = round((time.perf_counter() - started) * 1000, 1)
                 self.error = None
-                self._publish(scene)
+                self._publish(scene, snap)
                 if self.static:
                     time.sleep(3600)
                     continue
@@ -378,8 +561,10 @@ class _ViewServer:
             if elapsed < self.interval:
                 time.sleep(self.interval - elapsed)
 
-    def _publish(self, scene: dict) -> None:
+    def _publish(self, scene: dict, snap: dict | None = None) -> None:
         self.scene = scene
+        if snap is not None:
+            self.snapshot = snap
         self.updates += 1
         payload = json.dumps(scene, ensure_ascii=False).encode("utf-8")
         with self._lock:
@@ -453,6 +638,14 @@ def _make_handler(server: _ViewServer):
                     self.send_response(404)
                     self.send_header("Content-Length", "0")
                     self.end_headers()
+            elif url.path == "/snapshot":
+                fragment = server.snapshot
+                raw_path = (parse_qs(url.query).get("path") or [""])[0]
+                for part in filter(None, raw_path.split(",")):
+                    part = int(part) if part.lstrip("-").isdigit() else part
+                    fragment = fragment[part]
+                body = json.dumps(fragment, ensure_ascii=False, indent=1).encode("utf-8")
+                self._send("application/json; charset=utf-8", body)
             elif url.path == "/stream":
                 self._stream()
             else:
