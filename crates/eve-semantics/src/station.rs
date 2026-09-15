@@ -38,6 +38,12 @@ pub struct StationButton {
 #[derive(Clone, Debug, Serialize)]
 pub struct StationWindow {
     pub region: DisplayRegion,
+    /// 本窗口拥有的交互元素地址（树成员判定：元素祖先链上最近的
+    /// 窗口节点拥有它；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本窗口节点地址（与 element.window_address / element_tree join）。
+    pub address: String,
+
     #[serde(flatten)]
     pub interaction: InteractionInfo,
     pub services: Vec<StationService>,
@@ -92,6 +98,8 @@ pub fn extract_station_window(tree: &RegionedTree<'_>) -> Option<StationWindow> 
         .collect();
 
     Some(StationWindow {
+        element_addresses: Vec::new(),
+        address: window.node.address.0.to_string(),
         region: window.total_region,
         interaction: interaction_info(tree, window),
         services,

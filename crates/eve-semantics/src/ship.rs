@@ -79,6 +79,11 @@ pub enum ManeuverType {
 #[derive(Clone, Debug, Serialize)]
 pub struct ShipUi {
     pub region: DisplayRegion,
+    /// ShipUI 节点地址。
+    pub address: String,
+    /// 未结构化进 module_buttons / hud_buttons 的其余 HUD 交互元素
+    /// （停止舰船/最大速度/仪表/热量计/槽位弧…；装配时填充）。
+    pub element_addresses: Vec<String>,
     pub module_buttons_high: Vec<ModuleButton>,
     pub module_buttons_mid: Vec<ModuleButton>,
     pub module_buttons_low: Vec<ModuleButton>,
@@ -155,6 +160,35 @@ pub struct HudButton {
     /// → percent ≈ (px-3)×3, resolution ±~1.5%.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_percent: Option<i64>,
+}
+
+/// Does this (type_name, node_name) pair map to a structured hud_button?
+/// Assembly uses it to exclude already-structured HUD elements from
+/// ShipUi.element_addresses.
+pub fn is_hud_button_type(type_name: &str, name: Option<&str>) -> bool {
+    matches!(
+        (type_name, name.unwrap_or("")),
+        ("QuickLockButton", _)
+            | ("CheckboxWithTooltip", "autolockcheckbox")
+            | ("CheckboxWithTooltip", "autofirecheckbox")
+            | ("FireFocusButton", _)
+            | ("LockOption", _)
+            | ("LockStopButton", _)
+            | ("FireOption", _)
+            | ("FireStopButton", _)
+            | ("SafetyButton", _)
+            | ("LeftSideButtonCameraTactical", _)
+            | ("LeftSideButtonCameraOrbit", _)
+            | ("LeftSideButtonCameraPOV", _)
+            | ("LeftSideButtonCargo", _)
+            | ("LeftSideButtonTactical", _)
+            | ("LeftSideButtonScanner", _)
+            | ("LeftSideButtonAutopilot", _)
+            | ("LeftSideButtonMiningScan", _)
+            | ("OverloadBtn", "overloadBtnHi")
+            | ("OverloadBtn", "overloadBtnMed")
+            | ("OverloadBtn", "overloadBtnLo")
+    )
 }
 
 /// Node → semantic kind mapping for HUD controls (type-name or
@@ -380,6 +414,8 @@ pub fn extract_ship_ui(tree: &RegionedTree<'_>) -> Option<ShipUi> {
     let (high, mid, low) = module_rows(tree, ship_node, capacitor);
     Some(ShipUi {
         region: ship_node.total_region,
+        address: ship_node.node.address.0.to_string(),
+        element_addresses: Vec::new(),
         module_buttons_high: high,
         module_buttons_mid: mid,
         module_buttons_low: low,

@@ -101,32 +101,100 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
     let interaction_start = std::time::Instant::now();
     let mut interaction_elements = interaction::extract_interaction_elements(&regioned);
     let mut other_windows = windows::extract_generic_windows(&regioned);
-    // Window membership: every interaction element joins its enclosing
-    // top-level generic window (smallest containing rect, center test) —
-    // the container grouping agents use to tell what belongs together.
-    for element in &mut interaction_elements {
-        let (cx, cy) = element.region.center();
-        let mut best: Option<usize> = None;
-        let mut best_area = i64::MAX;
-        for (index, window) in other_windows.iter().enumerate() {
-            if window.region.contains_point(cx, cy) {
-                let area = window.region.area();
-                if area < best_area {
-                    best_area = area;
-                    best = Some(index);
-                }
+    let mut ship_ui = ship::extract_ship_ui(&regioned);
+    let mut overview_windows = overview::extract_overview_windows(&regioned, profile);
+    let mut inventory_windows = inventory::extract_inventory_windows(&regioned);
+    let mut station_window = station::extract_station_window(&regioned);
+    let mut fitting_window = fitting::extract_fitting_window(&regioned);
+    let mut chat_window_stacks = windows::extract_chat_window_stacks(&regioned);
+    // ── 元素归属（树成员判定）──────────────────────────────────────
+    // 元素祖先链上最近的语义根拥有它：ShipUI / 特化窗口类型 /
+    // other_windows 的通用窗口节点。每个元素恰好一个归属，
+    // window_address 与各根的 element_addresses 互为镜像。
+    let mut ownership: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    {
+        let mut parent = vec![0usize; regioned.all_nodes().len()];
+        for node in regioned.all_nodes() {
+            for child in regioned.children_of(node) {
+                parent[child.index] = node.index;
             }
         }
-        if let Some(index) = best {
-            other_windows[index].element_addresses.push(element.address.clone());
-            element.window_address = Some(other_windows[index].address.clone());
+        let generic_addresses: std::collections::HashSet<String> = other_windows
+            .iter()
+            .map(|w| w.address.clone())
+            .collect();
+        for element in &mut interaction_elements {
+            let mut index = element.node_index;
+            let mut owner: Option<String> = None;
+            let mut ship_hit = false;
+            while index != 0 {
+                index = parent[index];
+                let ancestor = &regioned.all_nodes()[index];
+                let type_name = ancestor.type_name();
+                if type_name == "ShipUI" {
+                    ship_hit = true;
+                    break;
+                }
+                if windows::SPECIALIZED_WINDOW_TYPES.contains(&type_name)
+                    || generic_addresses.contains(&ancestor.node.address.0.to_string())
+                {
+                    owner = Some(ancestor.node.address.0.to_string());
+                    break;
+                }
+            }
+            match (ship_hit, owner) {
+                (true, _) => {
+                    // 已结构化（模块按钮 / HUD 按钮）的不重复收拢。
+                    let structured = element.type_name == "ModuleButton"
+                        || ship::is_hud_button_type(
+                            &element.type_name,
+                            element.name.as_deref(),
+                        );
+                    if !structured {
+                        if let Some(ship) = &mut ship_ui {
+                            ship.element_addresses.push(element.address.clone());
+                            element.window_address = Some(ship.address.clone());
+                        }
+                    }
+                }
+                (false, Some(address)) => {
+                    ownership
+                        .entry(address.clone())
+                        .or_default()
+                        .push(element.address.clone());
+                    element.window_address = Some(address);
+                }
+                (false, None) => {}
+            }
         }
+    }
+    let mut fill = |addresses: &mut Vec<String>, address: &str| {
+        if let Some(members) = ownership.remove(&address.to_string()) {
+            *addresses = members;
+        }
+    };
+    for window in &mut overview_windows {
+        fill(&mut window.element_addresses, &window.address);
+    }
+    for window in &mut inventory_windows {
+        fill(&mut window.element_addresses, &window.address);
+    }
+    if let Some(window) = &mut station_window {
+        fill(&mut window.element_addresses, &window.address);
+    }
+    if let Some(window) = &mut fitting_window {
+        fill(&mut window.element_addresses, &window.address);
+    }
+    for stack in &mut chat_window_stacks {
+        fill(&mut stack.element_addresses, &stack.address);
+    }
+    for window in &mut other_windows {
+        fill(&mut window.element_addresses, &window.address);
     }
     let interaction_us = interaction_start.elapsed().as_micros() as u64;
 
     let extractors_start = std::time::Instant::now();
-    let ship_ui = ship::extract_ship_ui(&regioned);
-    let station_window = station::extract_station_window(&regioned);
     let message_boxes = windows::extract_message_boxes(&regioned);
     let game_state = classify_game_state(&regioned, ship_ui.is_some(), station_window.is_some(), &message_boxes);
     let client_size = (!regioned.root().region.is_empty()).then_some(ClientSize {
@@ -142,16 +210,16 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         // Module tooltip while a module button is hovered (the
         // hover-then-read identification channel).
         module_button_tooltip: ship::extract_module_button_tooltip(&regioned),
-        overview_windows: overview::extract_overview_windows(&regioned, profile),
+        overview_windows,
         context_menus: menu::extract_context_menus(&regioned),
         util_menus: menu::extract_util_menus(&regioned),
-        inventory_windows: inventory::extract_inventory_windows(&regioned),
+        inventory_windows,
         message_boxes,
         neocom: windows::extract_neocom(&regioned),
         info_panels: windows::extract_info_panels(&regioned),
         selected_item_window: windows::extract_selected_item(&regioned),
-        chat_window_stacks: windows::extract_chat_window_stacks(&regioned),
-        fitting_window: fitting::extract_fitting_window(&regioned),
+        chat_window_stacks,
+        fitting_window,
         station_window,
         character_select: character_select::extract_character_select(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),

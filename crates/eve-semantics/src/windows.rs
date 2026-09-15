@@ -93,6 +93,12 @@ pub struct NeocomButton {
 #[derive(Clone, Debug, Serialize)]
 pub struct ChatWindowStack {
     pub region: DisplayRegion,
+    /// 本窗口拥有的交互元素地址（树成员判定：元素祖先链上最近的
+    /// 窗口节点拥有它；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本窗口节点地址（与 element.window_address / element_tree join）。
+    pub address: String,
+
     #[serde(flatten)]
     pub interaction: InteractionInfo,
     pub windows: Vec<ChatWindow>,
@@ -366,6 +372,8 @@ pub fn extract_chat_window_stacks(tree: &RegionedTree<'_>) -> Vec<ChatWindowStac
                 })
                 .collect();
             Some(ChatWindowStack {
+        element_addresses: Vec::new(),
+        address: stack.node.address.0.to_string(),
                 region: stack.total_region,
                 interaction: interaction_info(tree, stack),
                 windows,

@@ -22,6 +22,12 @@ pub const CONTAINER_TYPES: &[&str] = &[
 #[derive(Clone, Debug, Serialize)]
 pub struct InventoryWindow {
     pub region: DisplayRegion,
+    /// 本窗口拥有的交互元素地址（树成员判定：元素祖先链上最近的
+    /// 窗口节点拥有它；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本窗口节点地址（与 element.window_address / element_tree join）。
+    pub address: String,
+
     #[serde(flatten)]
     pub interaction: InteractionInfo,
     /// e.g. `1,211.9/5,000.0 m³` (parse with
@@ -77,6 +83,8 @@ fn extract_window(tree: &RegionedTree<'_>, window: &RegionedNode<'_>) -> Option<
         .collect();
 
     Some(InventoryWindow {
+        element_addresses: Vec::new(),
+        address: window.node.address.0.to_string(),
         region: window.total_region,
         interaction: interaction_info(tree, window),
         capacity_gauge_text,

@@ -409,6 +409,7 @@ def _preview(value) -> str | None:
 
 
 _ELEMENT_FLAGS = ("is_enabled", "is_click_reachable", "is_on_screen")
+_ELEMENTS_BY_ADDR: dict = {}
 
 
 def _element_row(element: dict, path: list) -> dict:
@@ -444,6 +445,17 @@ def _render(key: str, value, path: list, depth: int) -> dict:
     if isinstance(value, list):
         if not value:
             return _titem(key, sub="[]", path=path)
+        # element_addresses：地址数组解析为元素行（与 interaction_
+        # elements 的 join，两者都是快照字段）。
+        if key == "element_addresses" and len(value) > 0 and isinstance(value[0], str) and _ELEMENTS_BY_ADDR:
+            rows = []
+            for addr in value:
+                pair = _ELEMENTS_BY_ADDR.get(addr)
+                if pair:
+                    e, idx = pair
+                    rows.append(_element_row(e, ["interaction_elements", idx]))
+            if rows:
+                return _titem(f"{key} ({len(value)})", children=rows)
         rows = []
         for i, item in enumerate(value):
             item_path = path + [i]
@@ -479,6 +491,11 @@ def build_tree(snap: dict) -> list:
     击查看该片段的原始 JSON。不做任何视图层重组/认领/摘要拼装——对树
     的结构诉求应通过修改快照结构实现（网页与 API 永远同源）。
     """
+    global _ELEMENTS_BY_ADDR
+    _ELEMENTS_BY_ADDR = {
+        e.get("address"): (e, i)
+        for i, e in enumerate(snap.get("interaction_elements") or [])
+    }
     return [_render(key, value, [key], 0) for key, value in snap.items()]
 
 

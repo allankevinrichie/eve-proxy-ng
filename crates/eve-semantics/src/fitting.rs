@@ -42,6 +42,12 @@ pub struct FittingStat {
 #[derive(Clone, Debug, Serialize)]
 pub struct FittingWindow {
     pub region: DisplayRegion,
+    /// 本窗口拥有的交互元素地址（树成员判定：元素祖先链上最近的
+    /// 窗口节点拥有它；装配时填充）。
+    pub element_addresses: Vec<String>,
+    /// 本窗口节点地址（与 element.window_address / element_tree join）。
+    pub address: String,
+
     #[serde(flatten)]
     pub interaction: InteractionInfo,
     pub slots: Vec<FittingSlot>,
@@ -104,6 +110,8 @@ pub fn extract_fitting_window(tree: &RegionedTree<'_>) -> Option<FittingWindow> 
         .collect();
 
     Some(FittingWindow {
+        element_addresses: Vec::new(),
+        address: window.node.address.0.to_string(),
         region: window.total_region,
         interaction: interaction_info(tree, window),
         slots,
