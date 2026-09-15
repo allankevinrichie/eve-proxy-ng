@@ -22,6 +22,7 @@ pub const SPECIALIZED_WINDOW_TYPES: &[&str] = &[
     "ChatWindowStack",
     "ActiveItem",
     "SelectedItemWnd",
+    "LobbyWnd",
     "MarketOrdersWnd",
 ];
 

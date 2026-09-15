@@ -352,8 +352,10 @@ def _fmt_distance(meters) -> str | None:
 
 # ----------------------------------------------------------------- tree ---
 
-def _titem(label, sub=None, address=None, rect=None, path=None, children=None):
+def _titem(label, sub=None, address=None, rect=None, path=None, children=None, off=False):
     item = {"l": label}
+    if off:
+        item["off"] = True
     if sub:
         item["s"] = sub
     if address:
@@ -371,6 +373,10 @@ def _titem(label, sub=None, address=None, rect=None, path=None, children=None):
 
 def _element_row(element, index):
     flags = []
+    if element.get("is_interactable") is True:
+        pass
+    elif element.get("is_interactable") is False:
+        flags.append("不可交互")
     if (element.get("occluded_percent") or 0) >= 50:
         flags.append("遮挡")
     if element.get("is_on_screen") is False:
@@ -380,7 +386,8 @@ def _element_row(element, index):
         sub=" / ".join(filter(None, [
             element.get("role"), element.get("icon_name"), *flags])),
         address=element.get("address"), rect=element.get("region"),
-        path=["interaction_elements", index])
+        path=["interaction_elements", index],
+        off=element.get("is_interactable") is False)
 
 
 def _container_label(node: dict) -> str:
@@ -388,20 +395,28 @@ def _container_label(node: dict) -> str:
     label = name or (node.get("type_name") or "?")
     return label
 
-def _tree_branches(snap: dict) -> list:
-    """element_tree（快照的语义容器层级）→ 树条目；叶子为元素行。"""
+def _tree_branches(snap: dict, claimed: set | None = None) -> list:
+    """element_tree（快照的语义容器层级）→ 树条目；叶子为元素行。
+
+    claimed 中的元素地址已归特化窗口区段，此处剪除；剪空后只剩
+    透传壳的容器一并丢弃。"""
     elements = snap.get("interaction_elements") or []
     by_address = {e.get("address"): (e, i) for i, e in enumerate(elements)}
+    claimed = claimed or set()
 
-    def convert(node: dict) -> dict:
+    def convert(node: dict) -> dict | None:
         leaves = [_element_row(e, i)
                   for address in (node.get("elements") or [])
+                  if address not in claimed
                   if (pair := by_address.get(address))
                   for e, i in [pair]]
-        kids = [convert(child) for child in (node.get("children") or [])]
+        kids = [kid for kid in (convert(child) for child in (node.get("children") or []))
+                if kid is not None]
+        if not leaves and not kids:
+            return None
         sub = []
-        if node.get("elements"):
-            sub.append(f"{len(node['elements'])} 元素")
+        if leaves:
+            sub.append(f"{len(leaves)} 元素")
         if kids:
             sub.append(f"{len(kids)} 子容器")
         return _titem(_container_label(node),
@@ -410,12 +425,13 @@ def _tree_branches(snap: dict) -> list:
                       rect=node.get("region"),
                       children=kids + leaves)
 
-    return [convert(node) for node in (snap.get("element_tree") or [])]
+    return [branch for branch in (convert(node) for node in (snap.get("element_tree") or []))
+            if branch is not None]
 
-def _elements_grouped(snap: dict) -> list:
+def _elements_grouped(snap: dict, claimed: set | None = None) -> list:
     """优先使用快照的 element_tree 通用容器层级；无则回退窗口分组。"""
     if snap.get("element_tree"):
-        return _tree_branches(snap)
+        return _tree_branches(snap, claimed=claimed)
     windows = {w.get("address"): w for w in snap.get("other_windows") or []}
     groups: dict = {}
     order: list = []
@@ -484,6 +500,57 @@ def _window_sections(snap: dict, children: list) -> None:
         children.append(_titem(f"{name} ({len(windows)})", children=window_children))
 
 
+
+
+def _specialized_claims(snap: dict) -> dict:
+    """address -> section title：被特化窗口区段认领的元素。
+
+    特化区段（总览/库存/站内/装配/聊天栈）是这些元素的组织归属，
+    element_tree 中不再重复出现。判定：元素中心落在特化窗口矩形内，
+    且其 window_address 指向的通用窗口不小于该矩形（浮在面板上的
+    弹窗元素仍归 element_tree 的弹窗分支）。
+    """
+    sections = []  # (rect, title)
+    for window in snap.get("overview_windows") or []:
+        sections.append((window.get("region") or {}, "总览窗口"))
+    for window in snap.get("inventory_windows") or []:
+        sections.append((window.get("region") or {}, "库存窗口"))
+    for key, title in (("station_window", "站内服务"), ("fitting_window", "装配")):
+        if isinstance(snap.get(key), dict):
+            sections.append((snap[key].get("region") or {}, title))
+    for stack in snap.get("chat_window_stacks") or []:
+        sections.append((stack.get("region") or {}, "聊天窗口栈"))
+    generic = {w.get("address"): (w.get("region") or {})
+               for w in snap.get("other_windows") or []}
+
+    def rect_contains(rect, x, y):
+        return (rect.get("x", 1 << 60) <= x < rect.get("x", 0) + rect.get("width", 0)
+                and rect.get("y", 1 << 60) <= y < rect.get("y", 0) + rect.get("height", 0))
+
+    claims: dict[str, str] = {}
+    for index, element in enumerate(snap.get("interaction_elements") or []):
+        # 用可见足迹判定归属：虚拟化/滚动元素的原始矩形会远超容器，
+        # 其中心落在容器外，但其 visible_region 在容器内。
+        region = element.get("visible_region") or element.get("region") or {}
+        if not region:
+            continue
+        cx = region.get("x", 0) + region.get("width", 0) // 2
+        cy = region.get("y", 0) + region.get("height", 0) // 2
+        # 已被更小的通用窗口（弹窗等）持有的元素保持原归属
+        owner = generic.get(element.get("window_address"))
+        best = None
+        for rect, title in sections:
+            if rect_contains(rect, cx, cy):
+                if owner and rect_contains(owner, cx, cy) and (
+                        (owner.get("width", 0) * owner.get("height", 0))
+                        <= (rect.get("width", 0) * rect.get("height", 0))):
+                    best = None  # 浮窗更小更精确
+                    break
+                best = title
+        if best:
+            claims[element["address"]] = best
+    return claims
+
 def build_tree(snap: dict) -> list:
     """语义结构树：如实的 read_snapshot() 层级投影。
 
@@ -538,10 +605,18 @@ def build_tree(snap: dict) -> list:
 
     _window_sections(snap, children)
 
+    claims = _specialized_claims(snap)
+    by_section = {}
+    for i, e in enumerate(snap.get("interaction_elements") or []):
+        title = claims.get(e.get("address"))
+        if title:
+            by_section.setdefault(title, []).append(_element_row(e, i))
+
     for key, name in (("station_window", "站内服务"), ("fitting_window", "装配")):
         window = snap.get(key)
         if isinstance(window, dict):
-            children.append(_titem(name, rect=window.get("region"), path=[key]))
+            children.append(_titem(name, rect=window.get("region"), path=[key],
+                                   children=by_section.get(name)))
 
     stacks = snap.get("chat_window_stacks") or []
     if stacks:
@@ -552,8 +627,9 @@ def build_tree(snap: dict) -> list:
                    children=[
                        _titem(w.get("caption") or "?",
                               sub=f"{len(w.get('users') or [])} 人" if w.get("users") else None,
-                              path=["chat_window_stacks", i, "windows", j])
-                       for j, w in enumerate(s.get("windows") or [])])
+                              path=["chat_window_stack", i, "windows", j])
+                       for j, w in enumerate(s.get("windows") or [])]
+                       + by_section.get("聊天窗口栈", []))
             for i, s in enumerate(stacks)]))
 
     others = snap.get("other_windows") or []
@@ -567,8 +643,11 @@ def build_tree(snap: dict) -> list:
 
     elements = snap.get("interaction_elements") or []
     if elements:
-        children.append(_titem(f"interaction_elements ({len(elements)})",
-                               children=_elements_grouped(snap)))
+        rest = [e for e in elements if e.get("address") not in claims]
+        children.append(_titem(
+            f"interaction_elements ({len(rest)})"
+            + (f"，另 {len(claims)} 个已归入上方窗口区段" if claims else ""),
+            children=_elements_grouped(snap, claimed=set(claims))))
 
     counts = [(k, len(snap.get(k) or [])) for k in
               ("neocom", "scrollable_views", "layers",
