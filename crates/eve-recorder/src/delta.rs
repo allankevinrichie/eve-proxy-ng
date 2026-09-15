@@ -219,6 +219,7 @@ mod tests {
     fn interaction(address: u64, text: &str) -> InteractionElement {
         InteractionElement {
             type_name: "Button".into(),
+            node_index: 0,
             address: address.to_string(),
             window_address: None,
             name: None,

@@ -373,9 +373,39 @@ def _element_row(element, index):
         path=["interaction_elements", index])
 
 
+def _container_label(node: dict) -> str:
+    name = node.get("name") or ""
+    label = name or (node.get("type_name") or "?")
+    return label
+
+def _tree_branches(snap: dict) -> list:
+    """element_tree（快照的语义容器层级）→ 树条目；叶子为元素行。"""
+    elements = snap.get("interaction_elements") or []
+    by_address = {e.get("address"): (e, i) for i, e in enumerate(elements)}
+
+    def convert(node: dict) -> dict:
+        leaves = [_element_row(e, i)
+                  for address in (node.get("elements") or [])
+                  if (pair := by_address.get(address))
+                  for e, i in [pair]]
+        kids = [convert(child) for child in (node.get("children") or [])]
+        sub = []
+        if node.get("elements"):
+            sub.append(f"{len(node['elements'])} 元素")
+        if kids:
+            sub.append(f"{len(kids)} 子容器")
+        return _titem(_container_label(node),
+                      sub=" / ".join(sub) or None,
+                      address=node.get("address") or None,
+                      rect=node.get("region"),
+                      children=kids + leaves)
+
+    return [convert(node) for node in (snap.get("element_tree") or [])]
+
 def _elements_grouped(snap: dict) -> list:
-    """interaction_elements grouped by window_address — a faithful
-    grouping that uses only snapshot fields."""
+    """优先使用快照的 element_tree 通用容器层级；无则回退窗口分组。"""
+    if snap.get("element_tree"):
+        return _tree_branches(snap)
     windows = {w.get("address"): w for w in snap.get("other_windows") or []}
     groups: dict = {}
     order: list = []

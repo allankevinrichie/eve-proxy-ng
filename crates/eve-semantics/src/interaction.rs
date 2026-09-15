@@ -326,6 +326,9 @@ const MAX_INTERACTION_ELEMENTS: usize = 2000;
 #[derive(Clone, Debug, Serialize)]
 pub struct InteractionElement {
     pub type_name: String,
+    /// Pre-order index in the RegionedTree (internal, not serialized).
+    #[serde(skip)]
+    pub node_index: usize,
     /// Decimal node address — the stable identity used for frame-to-frame
     /// keyed diffs in the recorder.
     pub address: String,
@@ -440,6 +443,7 @@ pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionE
             let (visible_region, is_on_screen) = visible_geometry(tree, &parent, node, client);
             InteractionElement {
                 type_name: node.type_name().to_string(),
+                node_index: node.index,
                 address: node.node.address.0.to_string(),
                 window_address: None,
                 name: node.name().map(str::to_string),
@@ -511,6 +515,151 @@ fn visible_geometry(
         .intersect(&client)
         .is_some_and(|r| r.width > 0 && r.height > 0);
     (clipped.then_some(visible).filter(|v| *v != raw), on_screen)
+}
+
+/// One node of the semantic element hierarchy: a container grouping
+/// interaction elements (layers, windows, panels, HUD clusters…).
+#[derive(Clone, Debug, Serialize)]
+pub struct ElementTreeNode {
+    pub type_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub address: String,
+    pub region: DisplayRegion,
+    /// Addresses of the interaction elements directly under this
+    /// container (deeper elements live in `children`).
+    pub elements: Vec<String>,
+    pub children: Vec<ElementTreeNode>,
+}
+
+/// Rendering primitives never usefully group anything — excluded from
+/// container candidacy even when named.
+const RENDER_PRIMITIVE_TYPES: &[&str] = &[
+    "Sprite", "Icon", "Transform", "Canvas", "EveLabel", "EveLabelMedium",
+    "EveLabelLargeBold", "EveLabelSmall", "Textline", "TextHeadline",
+    "SE_TextlineCore", "ContainerAutoSize", "DraggableClipper", "GaugeBar",
+];
+
+/// Is this node a semantic container (a level worth showing in the
+/// element hierarchy)? Generic signals only — no per-screen whitelists:
+///
+/// * root's direct children are the UI layers (`l_main`, `l_modal`…);
+/// * Wnd/Window-named nodes are windows;
+/// * otherwise: a NAMED node (the game names what its code references)
+///   whose type is not a rendering primitive.
+/// Interaction elements themselves stay leaves — a clickable row is an
+/// element, not a container level.
+fn is_semantic_container(node: &RegionedNode<'_>) -> bool {
+    let t = node.type_name();
+    if t.contains("Wnd") || t.contains("Window") {
+        return true;
+    }
+    if RENDER_PRIMITIVE_TYPES.contains(&t) {
+        return false;
+    }
+    node.name().is_some()
+}
+
+/// Build the semantic container hierarchy over the (flat) interaction
+/// elements: a trie of each element's semantic ancestor chain, with
+/// single-child intermediate levels collapsed. Elements with no
+/// semantic container land under a trailing 未分组 node.
+pub fn build_element_tree(
+    tree: &RegionedTree<'_>,
+    elements: &[InteractionElement],
+) -> Vec<ElementTreeNode> {
+    // Parent index map (pre-order).
+    let mut parent = vec![0usize; tree.all_nodes().len()];
+    for node in tree.all_nodes() {
+        for child in tree.children_of(node) {
+            parent[child.index] = node.index;
+        }
+    }
+
+    struct Builder {
+        node: ElementTreeNode,
+        kids: Vec<Builder>,
+    }
+
+    fn attach(builders: &mut Vec<Builder>, chain: &[&RegionedNode<'_>], element: &str) {
+        let head = chain[0];
+        let address = head.node.address.0.to_string();
+        let position = match builders.iter().position(|b| b.node.address == address) {
+            Some(position) => position,
+            None => {
+                builders.push(Builder {
+                    node: ElementTreeNode {
+                        type_name: head.type_name().to_string(),
+                        name: head.name().map(str::to_string),
+                        address,
+                        region: head.total_region,
+                        elements: Vec::new(),
+                        children: Vec::new(),
+                    },
+                    kids: Vec::new(),
+                });
+                builders.len() - 1
+            }
+        };
+        let builder = &mut builders[position];
+        if chain.len() == 1 {
+            builder.node.elements.push(element.to_string());
+        } else {
+            attach(&mut builder.kids, &chain[1..], element);
+        }
+    }
+
+    let mut roots: Vec<Builder> = Vec::new();
+    let mut ungrouped: Vec<String> = Vec::new();
+    for element in elements {
+        // Semantic ancestor chain (top → nearest container).
+        let mut chain: Vec<&RegionedNode<'_>> = Vec::new();
+        let mut index = element.node_index;
+        while index != 0 {
+            index = parent[index];
+            let ancestor = &tree.all_nodes()[index];
+            if ancestor.index == 0 {
+                break; // the root itself is not a container
+            }
+            if is_semantic_container(ancestor) {
+                chain.push(ancestor);
+            }
+        }
+        chain.reverse();
+        match chain.as_slice() {
+            [] => ungrouped.push(element.address.clone()),
+            chain => attach(&mut roots, chain, &element.address),
+        }
+    }
+    if !ungrouped.is_empty() {
+        roots.push(Builder {
+            node: ElementTreeNode {
+                type_name: "未分组".into(),
+                name: None,
+                address: String::new(),
+                region: DisplayRegion::EMPTY,
+                elements: ungrouped,
+                children: Vec::new(),
+            },
+            kids: Vec::new(),
+        });
+    }
+
+    fn collapse(builder: Builder) -> ElementTreeNode {
+        let mut node = builder.node;
+        let kids: Vec<ElementTreeNode> = builder.kids.into_iter().map(collapse).collect();
+        // A container whose only child is another container (no direct
+        // elements of its own) is a pass-through level — collapse it.
+        if kids.len() == 1 && node.elements.is_empty() {
+            let mut only = kids.into_iter().next().unwrap();
+            only.region = node.region;
+            return only;
+        }
+        node.children = kids;
+        node
+    }
+
+    roots.into_iter().map(collapse).collect()
 }
 
 /// Serializable form of [`HitTarget`] for CLI/Python.

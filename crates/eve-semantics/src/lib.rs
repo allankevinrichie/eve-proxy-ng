@@ -157,6 +157,7 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
         other_windows,
+        element_tree: interaction::build_element_tree(&regioned, &interaction_elements),
         interaction_elements,
     };
     let extractors_us = extractors_start.elapsed().as_micros() as u64;
@@ -280,4 +281,7 @@ pub struct UiSnapshot {
     /// screen (any UI state, including login/character selection).
     /// Tree order = topmost first.
     pub interaction_elements: Vec<interaction::InteractionElement>,
+    /// 语义容器层级：interaction_elements 按通用语义容器（层/窗口/
+    /// 面板/HUD 簇…）组织的树；单链中间层已坍缩。
+    pub element_tree: Vec<interaction::ElementTreeNode>,
 }

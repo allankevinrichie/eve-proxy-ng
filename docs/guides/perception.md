@@ -123,6 +123,15 @@ client.restore_window()
 - [资源与图标识别](resources.md)——名字与图标的解析策略
 - [Python API](../api.md)——全部接口细节
 
+### 语义容器层级（element_tree）
+
+`element_tree[]` 把平铺的 interaction_elements 按通用语义容器组织成树：
+**判定规则完全通用**（不枚举具体页面）——根的直接子节点=层（l_main/l_modal…）、
+Wnd/Window 命名=窗口、**带 _name 的节点=语义容器**（游戏代码只给需要引用的节点起名）、
+渲染原语（Sprite/Transform/Icon/EveLabel…）永不充当容器；交互元素自身保持叶子；
+单子容器中间层自动坍缩；无语义祖先的元素落入尾部未分组。太空场景实测：
+l_shipui→hudContainer（HUD 簇+增益槽）、l_inflight→59 个太空括号等层级自发涌现。
+
 ### 窗口容器与元素归属
 
 - `other_windows[]`：全部顶层窗口容器（特化窗口之外的安全网 + 弹窗类：每日登录/抽卡/活动等 `Wnd/Window` 命名容器），带 `address`/`caption`/`element_addresses`
