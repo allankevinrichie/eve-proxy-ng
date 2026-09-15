@@ -150,9 +150,9 @@ pub struct HudButton {
     /// reads a 3px baseline).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_strip_px: Option<i64>,
-    /// Derived fill percent (cargo button). Calibration: empty=3px,
-    /// 4% (5/125 m³)=4px → strip = 3 + trunc(frac·45); resolution
-    /// therefore ±~2%. Refine the FULL constant with a mid-fill sample.
+    /// Derived fill percent (cargo button). Three-point calibration:
+    /// 0%=3px, 4%(5/125m³)=4px, 12%(15/125m³)=7px → slope ≈0.34px/%
+    /// → percent ≈ (px-3)×3, resolution ±~1.5%.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill_percent: Option<i64>,
 }
@@ -251,10 +251,10 @@ fn extract_hud_buttons(
                 tree.children_of(node)
                     .find(|child| child.name() == Some("busyContainer"))
                     .map(|strip| {
-                        const EMPTY_BASE: i64 = 3; // measured: empty bay
-                        const FULL_SPAN: i64 = 45; // measured span guess (48px icon), ±2%
+                        const EMPTY_BASE: i64 = 3; // measured: 0% = 3px
+                        // measured slope: 0.34px/% (4%→4px, 12%→7px)
                         let px = strip.region.height;
-                        let percent = ((px - EMPTY_BASE).max(0) * 100 / FULL_SPAN).min(100);
+                        let percent = ((px - EMPTY_BASE).max(0) * 3).min(100);
                         (Some(px), Some(percent))
                     })
                     .unwrap_or((None, None))
