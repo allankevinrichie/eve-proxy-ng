@@ -475,8 +475,26 @@ def _elements_grouped(snap: dict, claimed: set | None = None) -> list:
     return children
 
 
-def _window_sections(snap: dict, children: list) -> None:
-    """特化窗口区段（总览/库存/菜单/消息框）。"""
+def _claimed_under_window(rows: list, window: dict) -> list:
+    """认领元素行中，中心落在该窗口矩形内的那些。"""
+    rect = window.get("region") or {}
+    x0, y0 = rect.get("x", 0), rect.get("y", 0)
+    x1 = x0 + rect.get("width", 0)
+    y1 = y0 + rect.get("height", 0)
+    out = []
+    for row in rows:
+        r = row.get("r")
+        if not r:
+            continue
+        cx, cy = r[0] + r[2] // 2, r[1] + r[3] // 2
+        if x0 <= cx <= x1 and y0 <= cy <= y1:
+            out.append(row)
+    return out
+
+
+def _window_sections(snap: dict, children: list, by_section: dict | None = None) -> None:
+    """特化窗口区段（总览/库存/菜单/消息框）；认领元素挂到各自窗口下。"""
+    by_section = by_section or {}
     specs = (
         ("overview_windows", "总览窗口"),
         ("inventory_windows", "库存窗口"),
@@ -517,9 +535,16 @@ def _window_sections(snap: dict, children: list) -> None:
             else:
                 items = [_titem((window.get("text") or "?")[:24], path=[key, i])]
                 label = "消息"
-            window_children.append(_titem(label, sub=f"{len(items)} 项",
+            claimed = _claimed_under_window(
+                by_section.get(name, []), window)
+            sub = f"{len(items)} 项"
+            if key == "inventory_windows" and window.get("capacity_gauge_text"):
+                sub = f"{window['capacity_gauge_text']} · {sub}"
+            if claimed:
+                sub += f" · {len(claimed)} 控件"
+            window_children.append(_titem(label, sub=sub,
                                           rect=window.get("region"), path=[key, i],
-                                          children=items))
+                                          children=items + claimed))
         children.append(_titem(f"{name} ({len(windows)})", children=window_children))
 
 
@@ -639,14 +664,14 @@ def build_tree(snap: dict) -> list:
                    path=["character_select", "slots", i])
             for i, slot in enumerate(slots)]))
 
-    _window_sections(snap, children)
-
     claims = _specialized_claims(snap)
     by_section = {}
     for i, e in enumerate(snap.get("interaction_elements") or []):
         title = claims.get(e.get("address"))
         if title:
             by_section.setdefault(title, []).append(_element_row(e, i))
+
+    _window_sections(snap, children, by_section)
 
     for key, name in (("station_window", "站内服务"), ("fitting_window", "装配")):
         window = snap.get(key)
