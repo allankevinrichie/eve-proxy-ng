@@ -98,3 +98,41 @@
 
 每批遵循：探测真实树结构 → 实现提取器 → 活体验证字段值 → 全量测试 →
 如实更新本文档"现状"列。
+
+## 附录：无归属元素全量分类（2026-09-16 实测 63 个）
+
+按"内存结构 / 语义 / 自身内容"三维度判定，分三类处置：
+
+### A. 已被结构化排除的（快照有更好的形态）——不处理，共 25 个
+
+| 元素 | 数量 | 判定依据 | 快照中的正确形态 |
+|---|---|---|---|
+| InSpaceBracket / MyShipBracket / AnomalyBracket / StaticSiteBracket | 34 | 内存：l_inflight 层真实天体对象（节点名含 itemID）；内容：图标=类别（星门/行星/小行星带/空间站）；语义：**太空物体清单** | 应归属新根 `in_space_objects`（T2）——不是"渲染残余" |
+| LeftSideButton* / QuickLockButton / FireFocus / LockStop / FireStop / Checkbox(autolock/autofire) / OverloadBtn ×3 / SafetyButton / ModuleButton_3651 / LeftSideButtonMiningScan | 22 | 内存：ShipUI 子树（is_hud_button_type 排除清单命中或 ModuleButton）；这些元素**故意不进** element_addresses | 已结构化为 `ship_ui.hud_buttons[]` / `module_buttons_*` / `overload`——排除正确 |
+
+### B. 真实信息元素，需归属（已有或新根）——共 3 组
+
+| 元素 | 数量 | 判定 | 处置 |
+|---|---|---|---|
+| InventoryPrimary / OverviewWindow / SelectedItemWnd / ChatWindowStack（**窗口本体**） | 4 | 内存：各特化窗口根节点自身（pick=1 的窗口体）；内容：图标 resize_handle_corner（角部图标泄漏到全窗标签） | **归属各自的语义根**——它们是根节点的元素身份，归属判定祖先链命中自身即归属自己。修正：祖先链含自身时归属该根 |
+| NeocomContainer 本体 | 1 | 同上（neocom 根自身） | 归属 `neocom` |
+| GlowSprite:atWarIcon | 1 | 内存：l_sidePanels/TimerContainer/AtWarCont；内容：atWar_64.png（宣战状态图标）；语义：**宣战指示器** | 归属新根 `timers`（TimerContainer 内含宣战图标+计时器，见下） |
+
+### C. 渲染残余 / 半信息元素——划归"渲染层"归属，共 4 个
+
+| 元素 | 判定依据 | 处置 |
+|---|---|---|
+| Sprite ×2（warped2.png，red bars 内） | 内容：ShipAlert/warped2.png = 跃迁保护倒计时条（红色渐变横幅）；语义：**跃迁不可跳跃提示**——非纯渲染，但 1536x384 挑不出小交互区 | 归属新根 `ship_alerts`：容器+条纹数/可见性 |
+| ButtonIcon:WidgetIcon + NotificationScrollContainer:myScrollCont + Container:mainCont(0x0) | 内存：通知中心（NotificationContainer）；内容：通知铃铛图标+滚动容器；语义：**通知中心**入口 | 归属新根 `notifications`：容器+入口按钮+可见性 |
+
+### 结论
+
+63 个无归属元素中没有"应丢弃的纯渲染垃圾"——全部是真实信息：
+- **34 太空物体** → `in_space_objects` 新根（最有信息量的"漏网之鱼"）
+- **25 HUD/模块** → 已正确结构化，排除自 element_addresses 是设计
+- **4 窗口本体** → 归属 bug：祖先链含自身时应归属
+- **2 宣战/警报** → `timers` / `ship_alerts` 新根
+- **3 通知** → `notifications` 新根
+
+修正优先级：① 窗口本体归属 bug（一行改动）→ ② in_space_objects（信息量最大）
+→ ③ timers / ship_alerts / notifications（低频但完整）

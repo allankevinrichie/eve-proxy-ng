@@ -131,7 +131,24 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
             let mut index = element.node_index;
             let mut owner: Option<String> = None;
             let mut ship_hit = false;
-            while index != 0 {
+            loop {
+                let self_node = &regioned.all_nodes()[index];
+                // 窗口根节点自身的元素身份（如 OverviewWindow 本体）：
+                // 祖先链含自身即归属该根。
+                let self_type = self_node.type_name();
+                if self_type == "ShipUI" {
+                    ship_hit = true;
+                    break;
+                }
+                if windows::SPECIALIZED_WINDOW_TYPES.contains(&self_type)
+                    || generic_addresses.contains(&self_node.node.address.0.to_string())
+                {
+                    owner = Some(self_node.node.address.0.to_string());
+                    break;
+                }
+                if index == 0 {
+                    break;
+                }
                 index = parent[index];
                 let ancestor = &regioned.all_nodes()[index];
                 let type_name = ancestor.type_name();
