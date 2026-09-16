@@ -463,18 +463,35 @@ def _render(key: str, value, path: list, depth: int) -> dict:
             owned = sum(1 for e in value if e.get("window_address"))
             BRACKET_TYPES = {'InSpaceBracket', 'MyShipBracket', 'AnomalyBracket',
                              'StaticSiteBracket', 'BracketShadowLabel'}
+            STATUS_TYPES = {'GlowSprite', 'MilestoneTimer', 'SafetyButton'}
+            STATUS_NAMES = {'atWarIcon', 'WidgetIcon', 'myScrollCont', 'mainCont',
+                            'targetOrigin', 'barAndImageCont'}
+            def _in_status(e):
+                tn = e.get('type_name') or ''
+                nm = e.get('name') or ''
+                if tn in STATUS_TYPES: return True
+                if nm in STATUS_NAMES: return True
+                if tn == 'Sprite' and 'warped' in ((e.get('icon') or '') + (e.get('label') or '')): return True
+                return False
             unowned = [e for e in value
-                       if not e.get("window_address")
-                       and e.get("type_name") not in BRACKET_TYPES]
+                       if not e.get('window_address')
+                       and e.get('type_name') not in BRACKET_TYPES
+                       and not _in_status(e)]
             rows = [_element_row(e, ["interaction_elements",
                                      value.index(e)])
                     for e in unowned[:100]]
             bracket_count = sum(1 for e in value
-                                 if not e.get("window_address")
-                                 and e.get("type_name") in BRACKET_TYPES)
+                                 if not e.get('window_address')
+                                 and e.get('type_name') in BRACKET_TYPES)
+            status_count = sum(1 for e in value
+                               if not e.get('window_address')
+                               and e.get('type_name') not in BRACKET_TYPES
+                               and _in_status(e))
             sub = f"{len(unowned)} 无归属"
             if bracket_count:
                 sub += f" · {bracket_count} 太空物体在 in_space_objects"
+            if status_count:
+                sub += f" · {status_count} 状态指示在 screen_timers/ship_alerts/notification_center/targets"
             if owned:
                 sub += f" · 另 {owned} 个已归入上方各语义根"
             return _titem(f"{key} ({len(value)})", sub=sub,

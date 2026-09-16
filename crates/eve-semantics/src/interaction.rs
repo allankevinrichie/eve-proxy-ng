@@ -431,6 +431,7 @@ pub fn extract_interaction_elements(tree: &RegionedTree<'_>) -> Vec<InteractionE
         // Sub-pixel rendering lines (target origin crosshair) carry no
         // interaction meaning — not elements.
         .filter(|node| node.total_region.height > 2)
+        .filter(|node| node.total_region.width > 2)
         .take(MAX_INTERACTION_ELEMENTS)
         .collect();
     // Drop INTERNAL COMPOSITION: a pick-taking descendant whose region
