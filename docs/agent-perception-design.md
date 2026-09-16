@@ -125,7 +125,19 @@
 | Sprite ×2（warped2.png，red bars 内） | 内容：ShipAlert/warped2.png = 跃迁保护倒计时条（红色渐变横幅）；语义：**跃迁不可跳跃提示**——非纯渲染，但 1536x384 挑不出小交互区 | 归属新根 `ship_alerts`：容器+条纹数/可见性 |
 | ButtonIcon:WidgetIcon + NotificationScrollContainer:myScrollCont + Container:mainCont(0x0) | 内存：通知中心（NotificationContainer）；内容：通知铃铛图标+滚动容器；语义：**通知中心**入口 | 归属新根 `notifications`：容器+入口按钮+可见性 |
 
-### 结论
+### 修正后结论（空间+祖先链交叉分析，2026-09-16 下午更新）
+
+对 90 个无归属元素做了**区域命中 × 祖先链**交叉分析：
+
+- **22 HUD/模块**（空间全部命中 ShipUI）→ 已正确排除，不变
+- **54+1 太空括号 + 1 星影标签**（空间散布全屏，祖先=l_bracket/l_sensorSuite）→ `in_space_objects`
+- **2 Line**（高度 1px，目标栏连线渲染）→ **已剔除**（`height > 2` 过滤器）
+- **5 通知中心**（祖先=NotificationContainer）→ `notifications`
+- **4 警报/计时器**（shipAlerts/TimerContainer）→ `timers` / `ship_alerts`
+- **0 渲染垃圾**（Line 剔除后）
+
+原结论"63 个无归属元素中没有应丢弃的纯渲染垃圾"修正为：
+Line 连线是唯一的纯渲染件（已剔除），其余全部是真实信息。
 
 63 个无归属元素中没有"应丢弃的纯渲染垃圾"——全部是真实信息：
 - **34 太空物体** → `in_space_objects` 新根（最有信息量的"漏网之鱼"）
