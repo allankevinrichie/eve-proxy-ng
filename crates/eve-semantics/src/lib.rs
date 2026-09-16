@@ -20,6 +20,9 @@
 //! ```
 
 pub mod character_select;
+pub mod dscan;
+pub mod selected_item;
+pub mod targets;
 pub mod fitting;
 pub mod icons;
 pub mod interaction;
@@ -251,6 +254,9 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         fitting_window,
         station_window,
         character_select: character_select::extract_character_select(&regioned),
+        targets: targets::extract_targets(&regioned),
+        selected_item_actions: selected_item::extract_selected_item_actions(&regioned),
+        dscan: dscan::extract_dscan(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
         other_windows,
@@ -368,6 +374,12 @@ pub struct UiSnapshot {
     /// Login character-select screen when present (slots with names
     /// and status lines).
     pub character_select: Option<character_select::CharacterSelect>,
+    /// Locked-target bar when targets are locked.
+    pub targets: Option<targets::TargetBar>,
+    /// Selected-item window action buttons (approach/warp/dock/…).
+    pub selected_item_actions: Vec<selected_item::SelectedItemAction>,
+    /// D-Scan window when open.
+    pub dscan: Option<dscan::DscanWindow>,
     /// Every scrollable list with visibility and scroll predictions.
     pub scrollable_views: Vec<ScrollView>,
     pub layers: Vec<LayerSummary>,
