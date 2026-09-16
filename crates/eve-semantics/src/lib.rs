@@ -169,17 +169,20 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
             }
             match (ship_hit, owner) {
                 (true, _) => {
-                    // 已结构化（模块按钮 / HUD 按钮）的不重复收拢。
+                    // 已结构化（模块按钮 / HUD 按钮）的不重复收拢，但
+                    // 仍标记归属 ship_ui——它们属于 ShipUI，只是以
+                    // 结构化字段（module_buttons / hud_buttons）呈现。
                     let structured = element.type_name == "ModuleButton"
                         || ship::is_hud_button_type(
                             &element.type_name,
                             element.name.as_deref(),
                         );
-                    if !structured {
-                        if let Some(ship) = &mut ship_ui {
+                    if let Some(ship) = &mut ship_ui {
+                        if !structured {
                             ship.element_addresses.push(element.address.clone());
-                            element.window_address = Some(ship.address.clone());
                         }
+                        // 无论是否结构化，window_address 指向 ship_ui。
+                        element.window_address = Some(ship.address.clone());
                     }
                 }
                 (false, Some(address)) => {

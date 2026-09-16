@@ -461,11 +461,20 @@ def _render(key: str, value, path: list, depth: int) -> dict:
         # 在各自语义根下显示，避免双重出现。
         if key == "interaction_elements" and isinstance(value, list) and value and isinstance(value[0], dict):
             owned = sum(1 for e in value if e.get("window_address"))
-            unowned = [e for e in value if not e.get("window_address")]
+            BRACKET_TYPES = {'InSpaceBracket', 'MyShipBracket', 'AnomalyBracket',
+                             'StaticSiteBracket', 'BracketShadowLabel'}
+            unowned = [e for e in value
+                       if not e.get("window_address")
+                       and e.get("type_name") not in BRACKET_TYPES]
             rows = [_element_row(e, ["interaction_elements",
                                      value.index(e)])
                     for e in unowned[:100]]
+            bracket_count = sum(1 for e in value
+                                 if not e.get("window_address")
+                                 and e.get("type_name") in BRACKET_TYPES)
             sub = f"{len(unowned)} 无归属"
+            if bracket_count:
+                sub += f" · {bracket_count} 太空物体在 in_space_objects"
             if owned:
                 sub += f" · 另 {owned} 个已归入上方各语义根"
             return _titem(f"{key} ({len(value)})", sub=sub,
