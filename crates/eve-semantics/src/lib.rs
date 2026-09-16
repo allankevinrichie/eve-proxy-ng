@@ -20,6 +20,7 @@
 //! ```
 
 pub mod character_select;
+pub mod in_space;
 pub mod dscan;
 pub mod selected_item;
 pub mod targets;
@@ -257,6 +258,7 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         targets: targets::extract_targets(&regioned),
         selected_item_actions: selected_item::extract_selected_item_actions(&regioned),
         dscan: dscan::extract_dscan(&regioned),
+        in_space_objects: in_space::extract_in_space(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
         other_windows,
@@ -380,6 +382,8 @@ pub struct UiSnapshot {
     pub selected_item_actions: Vec<selected_item::SelectedItemAction>,
     /// D-Scan window when open.
     pub dscan: Option<dscan::DscanWindow>,
+    /// All in-space object brackets (the agent's "what do I see" root).
+    pub in_space_objects: in_space::InSpaceObjects,
     /// Every scrollable list with visibility and scroll predictions.
     pub scrollable_views: Vec<ScrollView>,
     pub layers: Vec<LayerSummary>,
