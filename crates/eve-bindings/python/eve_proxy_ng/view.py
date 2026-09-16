@@ -456,6 +456,20 @@ def _render(key: str, value, path: list, depth: int) -> dict:
                     rows.append(_element_row(e, ["interaction_elements", idx]))
             if rows:
                 return _titem(f"{key} ({len(value)})", children=rows)
+        # interaction_elements 是全量数据源（根的 element_addresses
+        # 通过地址 join 到此），但树中只展开无归属的——已归属元素
+        # 在各自语义根下显示，避免双重出现。
+        if key == "interaction_elements" and isinstance(value, list) and value and isinstance(value[0], dict):
+            owned = sum(1 for e in value if e.get("window_address"))
+            unowned = [e for e in value if not e.get("window_address")]
+            rows = [_element_row(e, ["interaction_elements",
+                                     value.index(e)])
+                    for e in unowned[:100]]
+            sub = f"{len(unowned)} 无归属"
+            if owned:
+                sub += f" · 另 {owned} 个已归入上方各语义根"
+            return _titem(f"{key} ({len(value)})", sub=sub,
+                          path=path, children=rows)
         rows = []
         for i, item in enumerate(value):
             item_path = path + [i]
