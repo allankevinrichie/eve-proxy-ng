@@ -78,6 +78,13 @@ pub struct GameState {
     /// while set, nothing behind it is clickable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_by_modal: Option<String>,
+    /// QuickMessage 层的全局提示文本（"离服务器关闭…" / "连接丢失"等
+    /// 关键连接/维护状态——agent 判断客户端是否可操作的第一信号）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quick_message: Option<String>,
+    /// 综合判断：客户端是否处于可操作状态（无模态、无连接告警、
+    /// 聊天本地频道非"未知"）。
+    pub is_operable: bool,
 }
 
 /// Parse a UI tree into the semantic snapshot for the given flavor.
@@ -233,7 +240,17 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
 
     let extractors_start = std::time::Instant::now();
     let message_boxes = windows::extract_message_boxes(&regioned);
-    let game_state = classify_game_state(&regioned, ship_ui.is_some(), station_window.is_some(), &message_boxes);
+    let chat_messages: Vec<String> = chat_window_stacks
+        .iter()
+        .flat_map(|s| s.messages.iter().map(|m| m.text.clone()))
+        .collect();
+    let game_state = classify_game_state(
+        &regioned,
+        ship_ui.is_some(),
+        station_window.is_some(),
+        &message_boxes,
+        &chat_messages,
+    );
     let client_size = (!regioned.root().region.is_empty()).then_some(ClientSize {
         width: regioned.root().region.width,
         height: regioned.root().region.height,
@@ -289,6 +306,7 @@ fn classify_game_state(
     has_ship_ui: bool,
     has_station: bool,
     message_boxes: &[MessageBox],
+    chat_messages: &[String],
 ) -> GameState {
     // Strongest signals first: a leftover `l_charsel` layer with
     // `_display=true` can persist after login (observed in the dump
@@ -305,12 +323,30 @@ fn classify_game_state(
     } else {
         Screen::Unknown
     };
+    // QuickMessage layer: global overlay text ("离服务器关闭…" /
+    // "连接丢失" — server maintenance, disconnects, session warnings).
+    let quick_message = tree
+        .all_regioned()
+        .find(|node| node.type_name() == "QuickMessage")
+        .and_then(|qm| tree.descendants(qm).find_map(|n| n.text()))
+        .map(|text| crate::parsing::strip_markup(&text))
+        .filter(|text| !text.is_empty());
+    // Client operability: no modal, no disconnect QuickMessage, and
+    // the local chat channel is not "未知" (unknown = server gone).
+    let chat_unknown = chat_messages
+        .iter()
+        .any(|m| m.contains("频道更换为本地：未知"));
+    let is_operable = message_boxes.is_empty()
+        && quick_message.is_none()
+        && !chat_unknown;
     GameState {
         screen,
         // The topmost modal is the first MessageBox (tree order).
         blocked_by_modal: message_boxes.first().map(|b| {
             b.caption.clone().unwrap_or_else(|| "modal".to_string())
         }),
+        quick_message,
+        is_operable,
     }
 }
 
