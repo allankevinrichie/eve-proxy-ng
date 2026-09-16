@@ -20,6 +20,7 @@
 //! ```
 
 pub mod character_select;
+pub mod status;
 pub mod in_space;
 pub mod dscan;
 pub mod selected_item;
@@ -262,6 +263,9 @@ pub fn parse_ui_tree_timed(tree: &UiNode, flavor: Flavor) -> (UiSnapshot, ParseT
         selected_item_actions: selected_item::extract_selected_item_actions(&regioned),
         dscan: dscan::extract_dscan(&regioned),
         in_space_objects: in_space::extract_in_space(&regioned),
+        ship_alerts: status::extract_ship_alerts(&regioned),
+        screen_timers: status::extract_screen_timers(&regioned),
+        notification_center: status::extract_notification_center(&regioned),
         scrollable_views: scroll::extract_scrollable_views(&regioned),
         layers: windows::extract_layers(&regioned),
         other_windows,
@@ -387,6 +391,12 @@ pub struct UiSnapshot {
     pub dscan: Option<dscan::DscanWindow>,
     /// All in-space object brackets (the agent's "what do I see" root).
     pub in_space_objects: in_space::InSpaceObjects,
+    /// Ship-alert banners (warp protection, etc.).
+    pub ship_alerts: status::ShipAlerts,
+    /// Screen timers and status indicators (at-war, milestone, safety).
+    pub screen_timers: status::ScreenTimers,
+    /// Notification center overlay when present.
+    pub notification_center: Option<status::NotificationCenter>,
     /// Every scrollable list with visibility and scroll predictions.
     pub scrollable_views: Vec<ScrollView>,
     pub layers: Vec<LayerSummary>,
