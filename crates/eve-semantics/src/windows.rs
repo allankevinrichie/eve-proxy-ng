@@ -98,6 +98,8 @@ pub struct NeocomButton {
 #[derive(Clone, Debug, Serialize)]
 pub struct ChatWindowStack {
     pub region: DisplayRegion,
+    /// 当前标签页可见消息（自上而下）：发送者与文本（markup 剥离）。
+    pub messages: Vec<ChatMessage>,
     /// 本窗口拥有的交互元素地址（树成员判定：元素祖先链上最近的
     /// 窗口节点拥有它；装配时填充）。
     pub element_addresses: Vec<String>,
@@ -113,6 +115,19 @@ pub struct ChatWindowStack {
 pub struct ChatWindow {
     pub caption: Option<String>,
     pub users: Vec<String>,
+}
+
+/// One visible chat message in the active tab.
+#[derive(Clone, Debug, Serialize)]
+pub struct ChatMessage {
+    /// 发送者（showinfo 链接文本；系统消息为 EVE系统 等）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender: Option<String>,
+    /// 消息正文（markup 剥离后拼接）。
+    pub text: String,
+    /// 原始 markup（含链接/着色，供 agent 深解析）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -340,6 +355,47 @@ fn message_box_of(tree: &RegionedTree<'_>, message_box: &RegionedNode<'_>) -> Op
     })
 }
 
+/// Visible messages in the stack's ACTIVE tab: XmppChatEntry rows in
+/// the message scroller (the entry's first label run is the sender —
+/// a showinfo link — the rest is the body text).
+pub fn extract_chat_messages(tree: &RegionedTree<'_>, stack: &RegionedNode<'_>) -> Vec<ChatMessage> {
+    let mut messages = Vec::new();
+    for entry in tree
+        .descendants(stack)
+        .filter(|node| node.type_name() == "XmppChatEntry")
+    {
+        let mut sender: Option<String> = None;
+        let mut parts: Vec<String> = Vec::new();
+        let mut raws: Vec<String> = Vec::new();
+        for label in tree.descendants(entry).filter(|node| {
+            node.type_name() == "AbbreviatedLabel"
+        }) {
+            let Some(text) = label.text() else { continue };
+            if text.trim().is_empty() {
+                continue;
+            }
+            if sender.is_none() {
+                // First run: sender (showinfo link) — strip markup.
+                sender = Some(crate::parsing::strip_markup(&text));
+                raws.push(text);
+            } else {
+                parts.push(crate::parsing::strip_markup(&text));
+                raws.push(text);
+            }
+        }
+        if parts.is_empty() && sender.is_none() {
+            continue;
+        }
+        messages.push(ChatMessage {
+            sender,
+            text: parts.join(""),
+            raw: Some(raws.join("")),
+        });
+    }
+    messages.truncate(200);
+    messages
+}
+
 pub fn extract_neocom(tree: &RegionedTree<'_>) -> Option<Neocom> {
     let container = tree.find_by_type("NeocomContainer").next()?;
     let buttons = tree
@@ -389,6 +445,7 @@ pub fn extract_chat_window_stacks(tree: &RegionedTree<'_>) -> Vec<ChatWindowStac
                 })
                 .collect();
             Some(ChatWindowStack {
+            messages: extract_chat_messages(tree, stack),
         element_addresses: Vec::new(),
         address: stack.node.address.0.to_string(),
                 region: stack.total_region,
